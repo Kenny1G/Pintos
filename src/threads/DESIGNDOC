@@ -8,9 +8,9 @@
 
 >> Fill in the names and email addresses of your group members.
 
-Eva Batelaan <batelaan@stanford.edu>
+Eva Batelaan       <batelaan@stanford.edu>
 Kenny Oseleononmen <kenny1g@stanford.edu>
-Isaac Cheruiyot <icykip@stanford.edu>
+Akram Sbaih        <akram@stanford.edu>
 
 ---- PRELIMINARIES ----
 
@@ -30,26 +30,61 @@ Isaac Cheruiyot <icykip@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+Added to struct thread:
+    int64_t sleep_ticks;                /* Number of ticks left to sleep*/
+    struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
+    struct list_elem slept_elem;        /* List element for slept_threads list*/
+
+A list of slept threads was added so all threads don't have to be checked to 
+find those that should be woken up
+    static struct list slept_list;
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
+timer_sleep() intiializes the auxiliary variables in the thread struct,
+adds the thread to slept_list and downs the semaphore associated with the thread
+
+When there is a timer interrupt, the list of slept threads is iterated through,
+their sleep_ticks decremented, and all threads whose sleep_ticks are exhausted
+have their semaphore upped
+
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+
+By adding a list that contains only threads that are asleep the kernel doesn't
+have to iterate through every single thread to wake those that are due
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
+The only shared variable between threads is the slept_list, The order in which
+threads add themselves to the slept_list is inconsequential. 
+
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+
+Since we are using a semaphore, if a thread that is interrupted between being 
+added to the slept list and being put to sleep is removed from slept_list before
+it gets a chance to sleep, it does not deadlock as the call to sema_down simply
+will not put it to sleep.
+Other than this case, any other interruption is inconsequential. 
+
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+This design was chosen as it makes use of existing synchronization primitives as
+opposed to direclty calling thread_block () and unblock. It is also faster than
+using the thread for each to check for threads that need to be woken with the
+drawback being the fact that the size of the thread struct had to be increased.
+This could be made even more efficient by adding priority queue functionality to
+the existing list data structure so only threads that are woken up are iterated over
 
              PRIORITY SCHEDULING
              ===================

@@ -93,14 +93,11 @@ timer_sleep (int64_t ticks)
   sema_init(&sema, 0);
   struct thread *cur = thread_current ();
   cur->sleep_ticks = ticks;
-  cur->p_sema = &sema;
+  cur->sleep_sema = &sema;
   thread_add_to_slept ();
 
   ASSERT (intr_get_level () == INTR_ON);
-
-  while (cur->sleep_ticks > 0) {
-    sema_down(&sema);
-  }
+  sema_down(&sema);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be

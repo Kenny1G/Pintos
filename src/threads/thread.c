@@ -358,7 +358,7 @@ thread_wake_eligible_slept (void)
       struct thread *t = list_entry(e, struct thread, slept_elem);
       if (--t->sleep_ticks <= 0) {
         e = list_remove(e);
-        sema_up(t->p_sema);
+        sema_up(t->sleep_sema);
       }
       else {
         e = list_next (e);

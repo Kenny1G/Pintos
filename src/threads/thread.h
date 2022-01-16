@@ -98,7 +98,7 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
 #endif
     int64_t sleep_ticks;                /* Number of ticks left to sleep*/
-    struct semaphore *p_sema;           /* Semaphore to sleep and wake thread*/
+    struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
     struct list_elem slept_elem;        /* List element for slept_threads list*/
 
     /* Owned by thread.c. */
