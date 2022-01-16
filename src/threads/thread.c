@@ -24,6 +24,9 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* List of processes put to sleep by a call to timer_sleep */
+static struct list slept_list;
+
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -91,6 +94,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&slept_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -328,6 +332,37 @@ thread_foreach (thread_action_func *func, void *aux)
     {
       struct thread *t = list_entry (e, struct thread, allelem);
       func (t, aux);
+    }
+}
+
+/* Adds current thread to the list of slept threads*/
+void
+thread_add_to_slept (void)
+{
+  struct thread *t = thread_current ();
+  list_push_back(&slept_list, &(t->slept_elem));
+}
+
+/* This function wakes sleeping threads that have been asleep
+ * for longer than they were set to be */
+void
+thread_wake_eligible_slept (void)
+{
+  struct list_elem *e;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  e = list_begin(&slept_list);
+  while (e != list_end (&slept_list))
+    {
+      struct thread *t = list_entry(e, struct thread, slept_elem);
+      if (--t->sleep_ticks <= 0) {
+        e = list_remove(e);
+        sema_up(t->p_sema);
+      }
+      else {
+        e = list_next (e);
+      }
     }
 }
 

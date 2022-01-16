@@ -97,6 +97,9 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
+    int64_t sleep_ticks;                /* Number of ticks left to sleep*/
+    struct semaphore *p_sema;           /* Semaphore to sleep and wake thread*/
+    struct list_elem slept_elem;        /* List element for slept_threads list*/
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -130,6 +133,8 @@ void thread_yield (void);
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
+void thread_add_to_slept (void);
+void thread_wake_eligible_slept (void);
 int thread_get_priority (void);
 void thread_set_priority (int);
 
