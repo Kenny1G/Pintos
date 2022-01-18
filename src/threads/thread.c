@@ -73,6 +73,9 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static bool thread_higher_priority (const struct list_elem *,
+                                    const struct list_elem *,
+                                    void * UNUSED);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -163,13 +166,13 @@ thread_print_stats (void)
    scheduled.  Use a semaphore or some other form of
    synchronization if you need to ensure ordering.
 
-   The code provided sets the new thread's `priority' member to
-   PRIORITY, but no actual priority scheduling is implemented.
-   Priority scheduling is the goal of Problem 1-3. */
+   Sets the new thread's `priority' member to PRIORITY and yields
+   the CPU if another ready thread has higher priority. */
 tid_t
 thread_create (const char *name, int priority,
                thread_func *function, void *aux) 
 {
+  enum intr_level old_level;
   struct thread *t;
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
@@ -203,7 +206,10 @@ thread_create (const char *name, int priority,
   sf->ebp = 0;
 
   /* Add to run queue. */
+  old_level = intr_disable ();
   thread_unblock (t);
+  thread_yield_for_priority();
+  intr_set_level (old_level);
 
   return tid;
 }
@@ -241,7 +247,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, thread_higher_priority, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -312,9 +318,25 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered (&ready_list, &cur->elem, thread_higher_priority,
+                         NULL);
   cur->status = THREAD_READY;
   schedule ();
+  intr_set_level (old_level);
+}
+
+/* Yields the CPU if the current thread's priority is smaller than some
+   other ready thread's priority by calling thread_yield(). */
+void
+thread_yield_for_priority (void) 
+{
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
+  if (!list_empty (&ready_list) 
+      && thread_current ()->priority < list_entry (list_front (&ready_list), 
+                                    struct thread, elem)->priority)
+    thread_yield();
   intr_set_level (old_level);
 }
 
@@ -366,11 +388,18 @@ thread_wake_eligible_slept (void)
     }
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Sets the current thread's priority to NEW_PRIORITY. 
+   If any other ready thread has higher priority than NEW_PRIORITY, the
+   current thread yields the CPU, so don't call in an interrupt context. */
 void
 thread_set_priority (int new_priority) 
-{
+{  
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
   thread_current ()->priority = new_priority;
+  thread_yield_for_priority();
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -378,6 +407,15 @@ int
 thread_get_priority (void) 
 {
   return thread_current ()->priority;
+}
+
+/* Returns true if A has higher priority than B or false otherwise. */
+static bool
+thread_higher_priority (const struct list_elem *a, const struct list_elem *b, 
+                        void *aux UNUSED)
+{
+  return list_entry (a, struct thread, elem)->priority 
+         > list_entry (b, struct thread, elem)->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
