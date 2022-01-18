@@ -178,6 +178,8 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
+  lock->max_priority_donation = PRI_MIN;
+  list_init(&lock->waiters);
   sema_init (&lock->semaphore, 1);
 }
 
@@ -192,12 +194,30 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
+  enum intr_level old_level;
+  struct list_elem *max_prior_elem;
+  struct thread *curr_thread;
+
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  old_level = intr_disable ();
+  curr_thread = thread_current ();
+  list_push_back(&lock->waiters, &curr_thread->lock_elem);
+  if (curr_thread->priority > lock->max_priority_donation)
+    lock->max_priority_donation = curr_thread->priority;
+  if (lock->holder != NULL)
+    thread_recalculate_priority (lock->holder);
   sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  list_remove(&curr_thread->lock_elem);
+  max_prior_elem = list_min (&lock->waiters, thread_higher_priority, NULL);
+  lock->max_priority_donation = list_entry (max_prior_elem, struct thread,
+                                             lock_elem)->priority;
+  lock->holder = curr_thread;
+  list_push_back(&curr_thread->locks_held, &lock->elem);
+  thread_recalculate_priority(curr_thread);
+  intr_set_level (old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -228,11 +248,18 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock) 
 {
+  enum intr_level old_level;
+
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  old_level = intr_disable ();
   lock->holder = NULL;
+  list_remove (&lock->elem);
+  thread_recalculate_priority (thread_current ());
   sema_up (&lock->semaphore);
+  thread_yield_for_priority();
+  intr_set_level (old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -245,7 +272,7 @@ lock_held_by_current_thread (const struct lock *lock)
 
   return lock->holder == thread_current ();
 }
-
+
 /* One semaphore in a list. */
 struct semaphore_elem 
   {
