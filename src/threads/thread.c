@@ -595,8 +595,8 @@ next_thread_to_run (void)
     return idle_thread;
   else
     {
-      next_thread_elem = list_min (&ready_list, thread_higher_priority, NULL);
-      list_remove(next_thread_elem);
+      next_thread_elem = list_pop_min (&ready_list, thread_higher_priority, 
+                                       NULL);
       return list_entry (next_thread_elem, struct thread, elem);
     }
 }
