@@ -23,6 +23,7 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+#define MAX_PRIORITY_DONATION_NESTED_DEPTH 8    /* For recursive donations. */
 
 /* A kernel thread or user process.
 
@@ -95,6 +96,7 @@ struct thread
     struct list_elem elem;              /* List element. */
     struct list locks_held;             /* List of the held locks. */
     struct list_elem lock_elem;         /* Element in a lock waiters list. */
+    struct lock *blocking_lock;         /* The lock blocking if any. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -141,7 +143,7 @@ void thread_add_to_slept (void);
 void thread_wake_eligible_slept (void);
 int thread_get_priority (void);
 void thread_set_priority (int);
-void thread_recalculate_priority (struct thread *);
+void thread_recalculate_priority (struct thread *, size_t);
 bool thread_higher_priority (const struct list_elem *,
                              const struct list_elem *,
                              void * UNUSED);
