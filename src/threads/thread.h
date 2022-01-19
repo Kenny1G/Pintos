@@ -89,6 +89,8 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Effective priority with donations. */
     int base_priority;                  /* Original priority without donations. */
+    int niceness;                       /* Thread nice value */
+    int recent_cpu;                     /* Amount of time thread has received recently */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
