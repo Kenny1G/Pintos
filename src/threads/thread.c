@@ -352,7 +352,12 @@ thread_yield_for_priority (void)
   if (!list_empty (&ready_list) 
       && thread_current ()->priority < list_entry (list_min (&ready_list, 
         thread_higher_priority, NULL), struct thread, elem)->priority)
-    thread_yield();
+    {
+      if (intr_context ())
+        intr_yield_on_return ();
+      else
+        thread_yield();
+    }
   intr_set_level (old_level);
 }
 
@@ -414,7 +419,7 @@ thread_set_priority (int new_priority)
 
   old_level = intr_disable ();
   thread_current ()->base_priority = new_priority;
-  thread_recalculate_priority (thread_current ());
+  thread_recalculate_priority (thread_current (), 0);
   thread_yield_for_priority ();
   intr_set_level (old_level);
 }
@@ -429,15 +434,17 @@ thread_get_priority (void)
 /* Looks at all threads awaiting locks held by the thread T
    to determine its maximum donated priority and store it. */
 void
-thread_recalculate_priority (struct thread* t)
+thread_recalculate_priority (struct thread* t, size_t nested_depth)
 {
   int max_priority;
-  struct list_elem *iterator;
+  struct list_elem *iterator, *max_lock_donation_elem;
   struct lock *lock;
   enum intr_level old_level;
 
   ASSERT (is_thread (t));
   
+  if (nested_depth > MAX_PRIORITY_DONATION_NESTED_DEPTH)
+    return;
   old_level = intr_disable ();
   max_priority = t->base_priority;
   for (iterator = list_begin(&t->locks_held);
@@ -449,6 +456,13 @@ thread_recalculate_priority (struct thread* t)
         max_priority = lock->max_priority_donation;
     }
   t->priority = max_priority;
+  if (t->blocking_lock != NULL)
+    {
+      max_lock_donation_elem = list_min (&t->blocking_lock->waiters, thread_higher_priority, NULL);
+      t->blocking_lock->max_priority_donation = list_entry (max_lock_donation_elem, struct thread,
+                                                lock_elem)->priority;
+      thread_recalculate_priority (t->blocking_lock->holder, nested_depth + 1);
+    }
   intr_set_level (old_level);
 }
 
