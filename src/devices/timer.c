@@ -89,6 +89,7 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
+  if (ticks <= 0) return;
   struct semaphore sema;
   sema_init(&sema, 0);
   struct thread *cur = thread_current ();
