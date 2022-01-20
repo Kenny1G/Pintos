@@ -106,6 +106,7 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&slept_list);
   list_init (&all_list);
+  mlfqs_load_average = fp (0);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -164,6 +165,7 @@ static void
 thread_mlfqs_update_tick (void)
 {
   enum intr_level old_level;
+  size_t count_ready_threads;
 
   ASSERT (thread_mlfqs);
   
@@ -171,10 +173,11 @@ thread_mlfqs_update_tick (void)
   if (timer_ticks () % TIMER_FREQ == 0)
     {
       /* Update load_average every second. */
+      count_ready_threads = list_size (&ready_list) + (thread_current () != idle_thread) ? 1 : 0;
       mlfqs_load_average = fp_add (fp_mult (fp_div (fp (59), fp (60)), 
                                             mlfqs_load_average),
-                                  fp_mult (fp_div (fp (1), fp (60)), 
-                                            list_size (&ready_list)));
+                                   fp_mult (fp_div (fp (1), fp (60)), 
+                                           fp (count_ready_threads)));
       /* Update all threads' recent_cpu every second. */
       thread_foreach (thread_mlfqs_update_recent_cpu, NULL);
     }
@@ -198,10 +201,11 @@ thread_mlfqs_update_tick (void)
 static void
 thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
 {
+  enum intr_level old_level;
 
   ASSERT (thread_mlfqs);
-  ASSERT (intr_get_level () == INTR_OFF);
 
+  old_level = intr_disable ();
   if (t->mlfqs_cache_priority) return;
   t->priority = fp_to_int (fp_sub (fp_sub (fp (PRI_MAX), 
                                            fp_div (t->mlfqs_recent_cpu, 
@@ -210,6 +214,7 @@ thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
   t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
   t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
   t->mlfqs_cache_priority = true;
+  intr_set_level (old_level);
 }
 
 /* Update the recent_cpu member for T assuming interrupts are
@@ -217,12 +222,13 @@ thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
 static void
 thread_mlfqs_update_recent_cpu (struct thread *t, void *aux UNUSED)
 {
+  enum intr_level old_level;
   fp_t decay_factor;
   fp_t old_recent_cpu;
 
   ASSERT (thread_mlfqs);
-  ASSERT (intr_get_level () == INTR_OFF);
 
+  old_level = intr_disable ();
   old_recent_cpu = t->mlfqs_recent_cpu;
   decay_factor = fp_div (fp_mult (fp (2), mlfqs_load_average),
                          fp_add (fp_mult (fp (2), mlfqs_load_average), 
@@ -230,6 +236,7 @@ thread_mlfqs_update_recent_cpu (struct thread *t, void *aux UNUSED)
   t->mlfqs_recent_cpu = fp_add (fp_mult (decay_factor, t->mlfqs_recent_cpu),
                                 fp (t->mlfqs_nice));
   t->mlfqs_cache_priority = old_recent_cpu == t->mlfqs_recent_cpu;
+  intr_set_level (old_level);
 }
 
 /* Prints thread statistics. */

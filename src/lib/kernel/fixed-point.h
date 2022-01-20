@@ -19,8 +19,8 @@ static inline int fp_to_nearest_int (fp_t x)
 {
   return (x >= 0) ? (x + F/2) / F : (x - F/2) / F;
 }
-static inline int fp_add (fp_t n, fp_t x) { return x + n * F; }
-static inline int fp_sub (fp_t x, fp_t n) { return x - n * F; }
+static inline int fp_add (fp_t x, fp_t y) { return x + y; }
+static inline int fp_sub (fp_t x, fp_t y) { return x - y; }
 static inline int fp_mult (fp_t x, fp_t y) 
 {
   return ((int64_t) x) * y / F; 
