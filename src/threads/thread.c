@@ -164,16 +164,19 @@ thread_tick (void)
 static void
 thread_mlfqs_update_tick (void)
 {
-  enum intr_level old_level;
-  size_t count_ready_threads;
-
   ASSERT (thread_mlfqs);
-  
-  old_level = intr_disable ();
+  struct thread *t = thread_current ();
+  /* Update this thread's recent_cpu every tick. */
+  if (t != idle_thread)
+    {
+      t->mlfqs_recent_cpu =
+        fp_add_to_int (t->mlfqs_recent_cpu, 1);
+    }
+
   if (timer_ticks () % TIMER_FREQ == 0)
     {
       /* Update load_average every second. */
-      count_ready_threads = list_size (&ready_list) +
+      size_t count_ready_threads = list_size (&ready_list) +
                           (thread_current () != idle_thread) ? 1 : 0;
       mlfqs_load_average = (mlfqs_load_average * 59)/60 +
                          fp(count_ready_threads)/60;
@@ -181,19 +184,11 @@ thread_mlfqs_update_tick (void)
       /* Update all threads' recent_cpu every second. */
       thread_foreach (thread_mlfqs_update_recent_cpu, NULL);
     }
-  else if (thread_ticks % MLFQS_THREAD_PRIORITY_FREQ == 0)
+  if (timer_ticks () % MLFQS_THREAD_PRIORITY_FREQ == 0)
     {
       /* Update all threads' priori every MLFQS_THREAD_PRIORITY_FREQ tick. */
       thread_foreach (thread_mlfqs_update_priority, NULL);
     }
-  else
-    {
-      /* Update this thread's recent_cpu every tick. */
-      if (thread_current () != idle_thread)
-        thread_current ()->mlfqs_recent_cpu =
-          fp_add_to_int (thread_current ()->mlfqs_recent_cpu, 1);
-    }
-  intr_set_level (old_level);
 }
 
 /* Updates the priority of T if T->mlfqs_cache_priority is false
@@ -209,7 +204,7 @@ thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
    * in the middle of clamping priority. */
   old_level = intr_disable ();
   if (t->mlfqs_cache_priority) return;
-  t->priority = PRI_MAX - fp_to_nearest_int(t->mlfqs_recent_cpu / 4)
+  t->priority = PRI_MAX - fp_to_int(t->mlfqs_recent_cpu / 4)
                 - (t->mlfqs_nice * 2);
   t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
   t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
@@ -230,7 +225,7 @@ thread_mlfqs_update_recent_cpu (struct thread *t, void *aux UNUSED)
   old_level = intr_disable ();
   old_recent_cpu = t->mlfqs_recent_cpu;
   fp_t coeff = fp_div(2 * mlfqs_load_average,
-                      2 * fp_add_to_int(mlfqs_load_average,  1));
+                      fp_add_to_int(2 * mlfqs_load_average,  1));
   t->mlfqs_recent_cpu = fp_add_to_int(fp_mult(coeff, t->mlfqs_recent_cpu),
                                       t->mlfqs_nice);
   t->mlfqs_cache_priority = old_recent_cpu == t->mlfqs_recent_cpu;
@@ -422,16 +417,17 @@ void
 thread_yield_for_priority (void) 
 {
   enum intr_level old_level;
-
   old_level = intr_disable ();
-  if (!list_empty (&ready_list) 
-      && thread_current ()->priority < list_entry (list_min (&ready_list, 
-        thread_higher_priority, NULL), struct thread, elem)->priority)
-    {
-      if (intr_context ())
-        intr_yield_on_return ();
-      else
-        thread_yield();
+  if (!list_empty (&ready_list)) {
+    struct thread* max_pri_thread = list_entry (list_min (&ready_list, 
+          thread_higher_priority, NULL), struct thread, elem); 
+    if (thread_current ()->priority < max_pri_thread->priority)
+      {
+        if (intr_context ())
+          intr_yield_on_return ();
+        else
+          thread_yield();
+      }
     }
   intr_set_level (old_level);
 }
@@ -511,33 +507,45 @@ thread_get_priority (void)
 void
 thread_recalculate_priority (struct thread* t, size_t nested_depth)
 {
-  int max_priority;
-  struct list_elem *iterator, *max_lock_donation_elem;
-  struct lock *lock;
-  enum intr_level old_level;
-
   ASSERT (is_thread (t));
-  
-  if (nested_depth > MAX_PRIORITY_DONATION_NESTED_DEPTH)
+
+  if (!thread_mlfqs && nested_depth > MAX_PRIORITY_DONATION_NESTED_DEPTH)
     return;
+
+  enum intr_level old_level;
   old_level = intr_disable ();
-  max_priority = t->base_priority;
-  for (iterator = list_begin(&t->locks_held);
-       iterator != list_end (&t->locks_held);
-       iterator = list_next(iterator))
-    {
-      lock = list_entry(iterator, struct lock, elem);
-      if (lock->max_priority_donation > max_priority)
-        max_priority = lock->max_priority_donation;
-    }
-  t->priority = max_priority;
-  if (t->blocking_lock != NULL)
-    {
-      max_lock_donation_elem = list_min (&t->blocking_lock->waiters, thread_higher_priority, NULL);
-      t->blocking_lock->max_priority_donation = list_entry (max_lock_donation_elem, struct thread,
-                                                lock_elem)->priority;
-      thread_recalculate_priority (t->blocking_lock->holder, nested_depth + 1);
-    }
+
+  if (thread_mlfqs) 
+  {
+    thread_mlfqs_update_priority (thread_current(), NULL);
+  }
+  else 
+  {
+    int max_priority;
+    struct list_elem *iterator, *max_lock_donation_elem;
+    struct lock *lock;
+    
+
+    max_priority = t->base_priority;
+    for (iterator = list_begin(&t->locks_held);
+         iterator != list_end (&t->locks_held);
+         iterator = list_next(iterator))
+      {
+        lock = list_entry(iterator, struct lock, elem);
+        if (lock->max_priority_donation > max_priority)
+          max_priority = lock->max_priority_donation;
+      }
+    t->priority = max_priority;
+    if (t->blocking_lock != NULL)
+      {
+        max_lock_donation_elem = list_min (&t->blocking_lock->waiters,
+            thread_higher_priority, NULL);
+        t->blocking_lock->max_priority_donation = 
+          list_entry (max_lock_donation_elem, struct thread,
+                                                  lock_elem)->priority;
+        thread_recalculate_priority (t->blocking_lock->holder, nested_depth + 1);
+      }
+  }
   intr_set_level (old_level);
 }
 
@@ -568,7 +576,7 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  return fp_to_int (fp_mult (mlfqs_load_average, fp (100)));
+  return fp_to_nearest_int (fp_mult(mlfqs_load_average, fp(100)));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
