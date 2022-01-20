@@ -63,7 +63,6 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 fp_t mlfqs_load_average;
-size_t mlfqs_ready_count;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -76,7 +75,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-static void thread_update_mlfqs_second (void);
+static void thread_update_mlfqs_tick (void);
+static void thread_update_recent_cpu (struct thread *, void * UNUSED);
 
 
 /* Initializes the threading system by transforming the code
@@ -107,7 +107,6 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->mlfqs_nice = 0;
   initial_thread->mlfqs_recent_cpu = 0;
-  mlfqs_ready_count = 0;
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -146,19 +145,19 @@ thread_tick (void)
   else
     kernel_ticks++;
   
-  /* Update MLFQS parameters. */
+  /* Update MLFQS statistics. */
   if (thread_mlfqs)
-    thread_update_mlfqs_second ();
+    thread_update_mlfqs_tick ();
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
 }
 
-/* Called every second by the timer to update the MLFQS scheduler
-   load_average and recent_cpu parameters for every thread. */
-void
-thread_update_mlfqs_second (void)
+/* Called every tick by the timer to update the MLFQS scheduler
+   load_average and recent_cpu statistics. */
+static void
+thread_update_mlfqs_tick (void)
 {
   enum intr_level old_level;
 
@@ -167,18 +166,39 @@ thread_update_mlfqs_second (void)
   old_level = intr_disable ();
   if (timer_ticks () % TIMER_FREQ == 0)
     {
-      /* Update load_average every full second */
+      /* Update load_average every second. */
       mlfqs_load_average = fp_add (fp_mult (fp_div (fp (59), fp (60)), 
                                             mlfqs_load_average),
                                   fp_mult (fp_div (fp (1), fp (60)), 
-                                            mlfqs_ready_count));
+                                            list_size (&ready_list)));
+      /* Update all threads' recent_cpu every second. */
+      thread_foreach (thread_update_recent_cpu, NULL);
     }
   else
     {
-      /* Update this thread's recent_cpu every tick */
-
+      /* Update this thread's recent_cpu every tick. */
+      if (thread_running () != idle_thread)
+        thread_running ()->mlfqs_recent_cpu = fp_add (fp (1),
+                                        thread_running ()->mlfqs_recent_cpu);
     }
   intr_set_level (old_level);
+}
+
+/* Update the recent_cpu member for T assuming interrupts are
+   off to prevent a writing race condition. */
+static void
+thread_update_recent_cpu (struct thread *t, void *aux UNUSED)
+{
+  fp_t decay_factor;
+
+  ASSERT (thread_mlfqs);
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  decay_factor = fp_div (fp_mul (fp (2), mlfqs_load_average),
+                         fp_sum (fp_mul (fp (2), mlfqs_load_average), 
+                                 fp (1)));
+  t->mlfqs_recent_cpu = fp_sum (fp_mul (decay_factor, t->mlfqs_recent_cpu),
+                                fp (t->mlfqs_nice));
 }
 
 /* Prints thread statistics. */
