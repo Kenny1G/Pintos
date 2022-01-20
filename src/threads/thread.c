@@ -173,11 +173,11 @@ thread_mlfqs_update_tick (void)
   if (timer_ticks () % TIMER_FREQ == 0)
     {
       /* Update load_average every second. */
-      count_ready_threads = list_size (&ready_list) + (thread_current () != idle_thread) ? 1 : 0;
-      mlfqs_load_average = fp_add (fp_mult (fp_div (fp (59), fp (60)), 
-                                            mlfqs_load_average),
-                                   fp_mult (fp_div (fp (1), fp (60)), 
-                                           fp (count_ready_threads)));
+      count_ready_threads = list_size (&ready_list) +
+                          (thread_current () != idle_thread) ? 1 : 0;
+      mlfqs_load_average = (mlfqs_load_average * 59)/60 +
+                         fp(count_ready_threads)/60;
+
       /* Update all threads' recent_cpu every second. */
       thread_foreach (thread_mlfqs_update_recent_cpu, NULL);
     }
@@ -190,8 +190,8 @@ thread_mlfqs_update_tick (void)
     {
       /* Update this thread's recent_cpu every tick. */
       if (thread_current () != idle_thread)
-        thread_current ()->mlfqs_recent_cpu = fp_add (fp (1),
-                                        thread_current ()->mlfqs_recent_cpu);
+        thread_current ()->mlfqs_recent_cpu =
+          fp_add_to_int (thread_current ()->mlfqs_recent_cpu, 1);
     }
   intr_set_level (old_level);
 }
@@ -205,12 +205,12 @@ thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
 
   ASSERT (thread_mlfqs);
 
+  /* Disable interrupts so thread isn't put on wrong queue
+   * in the middle of clamping priority. */
   old_level = intr_disable ();
   if (t->mlfqs_cache_priority) return;
-  t->priority = fp_to_int (fp_sub (fp_sub (fp (PRI_MAX), 
-                                           fp_div (t->mlfqs_recent_cpu, 
-                                                   fp (4))), 
-                                   fp (2 * t->mlfqs_nice)));
+  t->priority = PRI_MAX - fp_to_nearest_int(t->mlfqs_recent_cpu / 4)
+                - (t->mlfqs_nice * 2);
   t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
   t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
   t->mlfqs_cache_priority = true;
@@ -223,18 +223,16 @@ static void
 thread_mlfqs_update_recent_cpu (struct thread *t, void *aux UNUSED)
 {
   enum intr_level old_level;
-  fp_t decay_factor;
   fp_t old_recent_cpu;
 
   ASSERT (thread_mlfqs);
 
   old_level = intr_disable ();
   old_recent_cpu = t->mlfqs_recent_cpu;
-  decay_factor = fp_div (fp_mult (fp (2), mlfqs_load_average),
-                         fp_add (fp_mult (fp (2), mlfqs_load_average), 
-                                 fp (1)));
-  t->mlfqs_recent_cpu = fp_add (fp_mult (decay_factor, t->mlfqs_recent_cpu),
-                                fp (t->mlfqs_nice));
+  fp_t coeff = fp_div(2 * mlfqs_load_average,
+                      2 * fp_add_to_int(mlfqs_load_average,  1));
+  t->mlfqs_recent_cpu = fp_add_to_int(fp_mult(coeff, t->mlfqs_recent_cpu),
+                                      t->mlfqs_nice);
   t->mlfqs_cache_priority = old_recent_cpu == t->mlfqs_recent_cpu;
   intr_set_level (old_level);
 }
