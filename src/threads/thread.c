@@ -12,6 +12,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/fixed-point.h"
+#include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -24,7 +25,7 @@
 /* List of queues of ready-to-run processes in THREAD_READY state,
    that is, processes that are ready to run but not actually
    running. For use in mlfq mode. */
-static struct list mlfq_ready_list[PRI_MAX + 1]
+static struct list mlfq_ready_list[PRI_MAX + 1];
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
@@ -168,7 +169,7 @@ thread_tick (void)
                                         thread_current ()->recent_cpu);
       if (timer_ticks () % TIMER_FREQ == 0) 
         {
-          load_avg = (load_avg * 59)/60 + (thread_get_num_ready_threads())/60
+          load_avg = (load_avg * 59)/60 + (thread_get_num_ready_threads())/60;
           thread_foreach(thread_mlfqs_recalculate_recent_cpu)
         }
     }
@@ -284,7 +285,7 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
   if (thread_mlfqs)
-    list_push_back (&mlfq_ready_list[t->priority], &t->elem)
+    list_push_back (&mlfq_ready_list[t->priority], &t->elem);
   else
     list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
@@ -358,7 +359,7 @@ thread_yield (void)
   old_level = intr_disable ();
   if (cur != idle_thread) {
     if (thread_mlfqs)
-      list_push_back (&mlfq_ready_list[&t->priority], &t->elem)
+      list_push_back (&mlfq_ready_list[&cur->priority], &t->elem);
     else
       list_push_back (&ready_list, &t->elem);
   }
@@ -560,7 +561,7 @@ thread_get_recent_cpu (void)
   return convert_to_int_round_nearest(thread_current ()->recent_cpu * 100);
 }
 
-/* Returns the number of ready threads including thee running thread
+/* Returns the number of ready threads including the running thread
    if it's not the idle thread. Only can be called if using mlfsq. */
 void
 thread_get_num_ready_threads (void)
