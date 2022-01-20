@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <fixed-point.h>
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -88,8 +89,10 @@ struct thread
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Effective priority with donations. */
-    int base_priority;                  /* Original priority without donations. */
+    int priority;                       /* After donations priority. */
+    int base_priority;                  /* Before donations priority. */
+    int mlfqs_nice;                     /* Niceness value for MLFQS. */
+    fp_t mlfqs_recent_cpu;              /* Recent_cpu value for MLFQS. */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */

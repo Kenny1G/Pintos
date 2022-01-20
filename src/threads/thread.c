@@ -57,10 +57,11 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 
-/* If false (default), use round-robin scheduler.
+/* If false (default), use priority scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+fp_t mlfqs_load_average;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -73,6 +74,7 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static void thread_update_mlfqs_second (void);
 
 
 /* Initializes the threading system by transforming the code
@@ -101,6 +103,8 @@ thread_init (void)
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
+  initial_thread->mlfqs_nice = 0;
+  initial_thread->mlfqs_recent_cpu = 0;
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -138,10 +142,40 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
+  
+  /* Update MLFQS parameters. */
+  if (thread_mlfqs)
+    thread_update_mlfqs_second ();
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+}
+
+/* Called every second by the timer to update the MLFQS scheduler
+   load_average and recent_cpu parameters for every thread. */
+void
+thread_update_mlfqs_second (void)
+{
+  enum intr_level old_level;
+
+  ASSERT (thread_mlfqs);
+  
+  old_level = intr_disable ();
+  if (timer_ticks () % TIMER_FREQUENCY == 0)
+    {
+      /* Update load_average every full second */
+      mlfqs_load_average = fp_add (fp_mult (fp_div (fp (59), fp (60)), 
+                                            mlfqs_load_average),
+                                  fp_mult (fp_div (fp (1), fp (60)), 
+                                            mlfqs_ready_count));
+    }
+  else
+    {
+      /* Update this thread's recent_cpu every tick */
+
+    }
+  intr_set_level (old_level);
 }
 
 /* Prints thread statistics. */
@@ -186,6 +220,8 @@ thread_create (const char *name, int priority,
 
   /* Initialize thread. */
   init_thread (t, name, priority);
+  t->mlfqs_nice = thread_current ()->mlfqs_nice;
+  t->mlfqs_recent_cpu = thread_current ()->mlfqs_recent_cpu;
   tid = t->tid = allocate_tid ();
 
   /* Stack frame for kernel_thread(). */
@@ -458,33 +494,30 @@ thread_higher_priority (const struct list_elem *a, const struct list_elem *b,
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice) 
 {
-  /* Not yet implemented. */
+  thread_current ()->mlfqs_nice = nice;
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current ()->mlfqs_nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fp_to_int (fp_mult (mlfqs_load_average, fp (100)));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fp_to_int (fp_mult (thread_current ()->mlfqs_recent_cpu, fp (100)));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
