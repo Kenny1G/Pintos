@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -62,6 +63,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 fp_t mlfqs_load_average;
+size_t mlfqs_ready_count;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -105,6 +107,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->mlfqs_nice = 0;
   initial_thread->mlfqs_recent_cpu = 0;
+  mlfqs_ready_count = 0;
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -162,7 +165,7 @@ thread_update_mlfqs_second (void)
   ASSERT (thread_mlfqs);
   
   old_level = intr_disable ();
-  if (timer_ticks () % TIMER_FREQUENCY == 0)
+  if (timer_ticks () % TIMER_FREQ == 0)
     {
       /* Update load_average every full second */
       mlfqs_load_average = fp_add (fp_mult (fp_div (fp (59), fp (60)), 
