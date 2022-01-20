@@ -62,6 +62,9 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+#define MLFQS_THREAD_PRIORITY_FREQ 4
+#define MLFQS_NICE_DEFAULT 0
+#define MLFQS_RECENT_CPU_DEFAULT 0
 fp_t mlfqs_load_average;
 
 static void kernel_thread (thread_func *, void *aux);
@@ -69,14 +72,16 @@ static void kernel_thread (thread_func *, void *aux);
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
-static void init_thread (struct thread *, const char *name, int priority);
+static void init_thread (struct thread *t, const char *name, int priority, 
+                         int mlfqs_nice, int mlfqs_recent_cpu);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-static void thread_update_mlfqs_tick (void);
-static void thread_update_recent_cpu (struct thread *, void * UNUSED);
+static void thread_mlfqs_update_tick (void);
+static void thread_mlfqs_update_recent_cpu (struct thread *, void * UNUSED);
+static void thread_mlfqs_update_priority (struct thread *, void * UNUSED);
 
 
 /* Initializes the threading system by transforming the code
@@ -104,9 +109,8 @@ thread_init (void)
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
-  init_thread (initial_thread, "main", PRI_DEFAULT);
-  initial_thread->mlfqs_nice = 0;
-  initial_thread->mlfqs_recent_cpu = 0;
+  init_thread (initial_thread, "main", PRI_DEFAULT, MLFQS_NICE_DEFAULT, 
+               MLFQS_RECENT_CPU_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -144,20 +148,20 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
-  
-  /* Update MLFQS statistics. */
-  if (thread_mlfqs)
-    thread_update_mlfqs_tick ();
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
-    intr_yield_on_return ();
+    intr_yield_on_return ();  
+
+  /* Update MLFQS statistics. */
+  if (thread_mlfqs)
+    thread_mlfqs_update_tick ();
 }
 
 /* Called every tick by the timer to update the MLFQS scheduler
    load_average and recent_cpu statistics. */
 static void
-thread_update_mlfqs_tick (void)
+thread_mlfqs_update_tick (void)
 {
   enum intr_level old_level;
 
@@ -172,7 +176,12 @@ thread_update_mlfqs_tick (void)
                                   fp_mult (fp_div (fp (1), fp (60)), 
                                             list_size (&ready_list)));
       /* Update all threads' recent_cpu every second. */
-      thread_foreach (thread_update_recent_cpu, NULL);
+      thread_foreach (thread_mlfqs_update_recent_cpu, NULL);
+    }
+  else if (thread_ticks % MLFQS_THREAD_PRIORITY_FREQ == 0)
+    {
+      /* Update all threads' priori every MLFQS_THREAD_PRIORITY_FREQ tick. */
+      thread_foreach (thread_mlfqs_update_priority, NULL);
     }
   else
     {
@@ -184,21 +193,43 @@ thread_update_mlfqs_tick (void)
   intr_set_level (old_level);
 }
 
-/* Update the recent_cpu member for T assuming interrupts are
-   off to prevent a writing race condition. */
+/* Updates the priority of T if T->mlfqs_cache_priority is false
+   assuming interrupts are off to prevent a race condition. */
 static void
-thread_update_recent_cpu (struct thread *t, void *aux UNUSED)
+thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
 {
-  fp_t decay_factor;
 
   ASSERT (thread_mlfqs);
   ASSERT (intr_get_level () == INTR_OFF);
 
+  if (t->mlfqs_cache_priority) return;
+  t->priority = fp_to_int (fp_sub (fp_sub (fp (PRI_MAX), 
+                                           fp_div (t->mlfqs_recent_cpu, 
+                                                   fp (4))), 
+                                   fp (2 * t->mlfqs_nice)));
+  t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
+  t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
+  t->mlfqs_cache_priority = true;
+}
+
+/* Update the recent_cpu member for T assuming interrupts are
+   off to prevent a writing race condition. */
+static void
+thread_mlfqs_update_recent_cpu (struct thread *t, void *aux UNUSED)
+{
+  fp_t decay_factor;
+  fp_t old_recent_cpu;
+
+  ASSERT (thread_mlfqs);
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  old_recent_cpu = t->mlfqs_recent_cpu;
   decay_factor = fp_div (fp_mult (fp (2), mlfqs_load_average),
                          fp_add (fp_mult (fp (2), mlfqs_load_average), 
                                  fp (1)));
   t->mlfqs_recent_cpu = fp_add (fp_mult (decay_factor, t->mlfqs_recent_cpu),
                                 fp (t->mlfqs_nice));
+  t->mlfqs_cache_priority = old_recent_cpu == t->mlfqs_recent_cpu;
 }
 
 /* Prints thread statistics. */
@@ -242,9 +273,8 @@ thread_create (const char *name, int priority,
     return TID_ERROR;
 
   /* Initialize thread. */
-  init_thread (t, name, priority);
-  t->mlfqs_nice = thread_current ()->mlfqs_nice;
-  t->mlfqs_recent_cpu = thread_current ()->mlfqs_recent_cpu;
+  init_thread (t, name, priority, thread_current ()->mlfqs_nice,
+               thread_current ()->mlfqs_recent_cpu);
   tid = t->tid = allocate_tid ();
 
   /* Stack frame for kernel_thread(). */
@@ -616,7 +646,8 @@ is_thread (struct thread *t)
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
-init_thread (struct thread *t, const char *name, int priority)
+init_thread (struct thread *t, const char *name, int priority, int mlfqs_nice,
+             int mlfqs_recent_cpu)
 {
   enum intr_level old_level;
 
@@ -630,9 +661,13 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->base_priority = priority;
   t->priority = priority;
+  t->mlfqs_nice = mlfqs_nice;
+  t->mlfqs_recent_cpu = mlfqs_recent_cpu;
   list_init(&t->locks_held);
   t->magic = THREAD_MAGIC;
-
+  if (thread_mlfqs) 
+    thread_mlfqs_update_priority (t, NULL);
+  
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
