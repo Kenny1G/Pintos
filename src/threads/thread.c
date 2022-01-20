@@ -177,9 +177,9 @@ thread_update_mlfqs_tick (void)
   else
     {
       /* Update this thread's recent_cpu every tick. */
-      if (thread_running () != idle_thread)
-        thread_running ()->mlfqs_recent_cpu = fp_add (fp (1),
-                                        thread_running ()->mlfqs_recent_cpu);
+      if (thread_current () != idle_thread)
+        thread_current ()->mlfqs_recent_cpu = fp_add (fp (1),
+                                        thread_current ()->mlfqs_recent_cpu);
     }
   intr_set_level (old_level);
 }
@@ -194,10 +194,10 @@ thread_update_recent_cpu (struct thread *t, void *aux UNUSED)
   ASSERT (thread_mlfqs);
   ASSERT (intr_get_level () == INTR_OFF);
 
-  decay_factor = fp_div (fp_mul (fp (2), mlfqs_load_average),
-                         fp_sum (fp_mul (fp (2), mlfqs_load_average), 
+  decay_factor = fp_div (fp_mult (fp (2), mlfqs_load_average),
+                         fp_add (fp_mult (fp (2), mlfqs_load_average), 
                                  fp (1)));
-  t->mlfqs_recent_cpu = fp_sum (fp_mul (decay_factor, t->mlfqs_recent_cpu),
+  t->mlfqs_recent_cpu = fp_add (fp_mult (decay_factor, t->mlfqs_recent_cpu),
                                 fp (t->mlfqs_nice));
 }
 
