@@ -12,26 +12,21 @@
 #include "fixed-point.h"
 #include <stdint.h>
 
-typedef int fixed_point_t;
-static inline fixed_point_t conv_to_fp(int n) { return n * F; }
-static inline int conv_to_int(fixed_point_t x) { return x / F; }
-static inline int conv_to_nearest_int(fixed_point_t x)
+typedef int32_t fp_t;
+static inline fp_t fp (int n) { return n * F; }
+static inline int fp_to_int (fp_t x) { return x / F; }
+static inline int fp_to_nearest_int (fp_t x)
 {
   return (x >= 0) ? (x + F/2) / F : (x - F/2) / F;
 }
-static inline int add_fp(fixed_point_t n, fixed_point_t x) 
-{
-  return x + n * F; 
-}
-static inline int sub_fp(fixed_point_t x, fixed_point_t n) 
-{ 
-  return x - n * F; 
-}
-static inline int mult_fp(fixed_point_t x, fixed_point_t y) 
+static inline int fp_add (fp_t n, fp_t x) { return x + n * F; }
+static inline int fp_sub (fp_t x, fp_t n) { return x - n * F; }
+static inline int fp_mult (fp_t x, fp_t y) 
 {
   return ((int64_t) x) * y / F; 
 }
-static inline int div_fp(fixed_point_t x, fixed_point_t y) {
+static inline int fp_div (fp_t x, fp_t y) 
+{
   return ((int64_t) x) * F / y; 
 }
 
