@@ -2,7 +2,7 @@
 #define __LIB_FIXED_POINT_H
 #include <stdint.h>
 
-#define F (1 << 14)
+#define F (1 << 16)
 
 /* Helper functions for fixed-point arithmetic
  * Note: helpers were not defined for arithmetic operations

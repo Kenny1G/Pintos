@@ -24,6 +24,7 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+static int thread_num_ready; /*number of threads in ready list*/
 
 /* List of processes put to sleep by a call to timer_sleep */
 static struct list slept_list;
@@ -107,6 +108,7 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&slept_list);
   list_init (&all_list);
+  thread_num_ready = 0;
   mlfqs_load_average = fp (0);
 
   /* Set up a thread structure for the running thread. */
@@ -170,14 +172,13 @@ thread_mlfqs_update_tick (void)
   /* Update this thread's recent_cpu every tick. */
   if (t != idle_thread)
     {
-      t->mlfqs_recent_cpu =
-        fp_add_to_int (t->mlfqs_recent_cpu, 1);
+      t->mlfqs_recent_cpu = fp_add_to_int (t->mlfqs_recent_cpu, 1);
     }
 
   if (timer_ticks () % TIMER_FREQ == 0)
     {
       /* Update load_average every second. */
-      int count_ready_threads = list_size (&ready_list) +
+      int count_ready_threads = thread_num_ready +
                           ((thread_current () != idle_thread) ? 1 : 0);
       mlfqs_load_average = fp_mult (fp_div (fp (59), fp (60)), mlfqs_load_average)
         + fp_div (fp (count_ready_threads), fp (60));
@@ -332,6 +333,7 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
+  thread_num_ready++;
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -402,7 +404,10 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    {
+      list_push_back (&ready_list, &cur->elem);
+      thread_num_ready++;
+    }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -730,6 +735,7 @@ next_thread_to_run (void)
     {
       next_thread_elem = list_pop_min (&ready_list, thread_higher_priority, 
                                        NULL);
+      thread_num_ready--;
       return list_entry (next_thread_elem, struct thread, elem);
     }
 }
