@@ -214,20 +214,17 @@ thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
   intr_set_level (old_level);
 }
 
-/* Update the recent_cpu member for T assuming interrupts are
-   off to prevent a writing race condition. */
+/* Update the recent_cpu member for t recent_cpu only changed
+ * in timer_interrupt handler so interrupts should be off 
+ */
 static void
 thread_mlfqs_update_recent_cpu (struct thread *t, void *aux UNUSED)
 {
-  enum intr_level old_level;
   ASSERT (thread_mlfqs);
-
-  old_level = intr_disable ();
   fp_t coeff = fp_div(2 * mlfqs_load_average,
                       fp_add_to_int(2 * mlfqs_load_average,  1));
   t->mlfqs_recent_cpu = fp_add_to_int(fp_mult(coeff, t->mlfqs_recent_cpu),
                                       t->mlfqs_nice);
-  intr_set_level (old_level);
 }
 
 /* Prints thread statistics. */
