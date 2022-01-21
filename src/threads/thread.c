@@ -177,7 +177,7 @@ thread_mlfqs_update_tick (void)
     {
       /* Update load_average every second. */
       size_t count_ready_threads = list_size (&ready_list) +
-                          (thread_current () != idle_thread) ? 1 : 0;
+                          ((thread_current () != idle_thread) ? 1 : 0);
       mlfqs_load_average = (mlfqs_load_average * 59)/60 +
                          fp(count_ready_threads)/60;
 
