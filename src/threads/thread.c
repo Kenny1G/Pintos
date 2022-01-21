@@ -446,12 +446,20 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+bool
+thread_less_sleep_func (const struct list_elem *a, const struct list_elem *b, 
+                        void *aux UNUSED)
+{
+  return list_entry (a, struct thread, slept_elem)->wake_tick
+         < list_entry (b, struct thread, slept_elem)->wake_tick;
+}
+
 /* Adds current thread to the list of slept threads*/
 void
 thread_add_to_slept (void)
 {
   struct thread *t = thread_current ();
-  list_push_back(&slept_list, &(t->slept_elem));
+  list_insert_ordered(&slept_list, &(t->slept_elem), thread_less_sleep_func, NULL);
 }
 
 /* This function wakes sleeping threads that have been asleep
@@ -463,17 +471,20 @@ thread_wake_eligible_slept (void)
 
   ASSERT (intr_get_level () == INTR_OFF);
 
-  e = list_begin(&slept_list);
-  while (e != list_end (&slept_list))
+  if (!list_empty(&slept_list))
     {
-      struct thread *t = list_entry(e, struct thread, slept_elem);
-      if (--t->sleep_ticks <= 0) {
-        e = list_remove(e);
-        sema_up(t->sleep_sema);
-      }
-      else {
-        e = list_next (e);
-      }
+      e = list_front(&slept_list);
+      while (e != list_end (&slept_list))
+        {
+          struct thread *t = list_entry (e, struct thread, slept_elem);
+          if (timer_ticks () >= t->wake_tick) 
+            {
+              e = list_remove(e);
+              sema_up(t->sleep_sema);
+            }
+          else
+            break;
+        }
     }
 }
 

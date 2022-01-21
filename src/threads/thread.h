@@ -105,7 +105,7 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-    int64_t sleep_ticks;                /* Number of ticks left to sleep*/
+    int64_t wake_tick;                /* Number of ticks left to sleep*/
     struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
     struct list_elem slept_elem;        /* List element for slept_threads list*/
 
@@ -148,6 +148,9 @@ int thread_get_priority (void);
 void thread_set_priority (int);
 void thread_recalculate_priority (struct thread *, size_t);
 bool thread_higher_priority (const struct list_elem *,
+                             const struct list_elem *,
+                             void * UNUSED);
+bool thread_less_sleep_func(const struct list_elem *,
                              const struct list_elem *,
                              void * UNUSED);
 
