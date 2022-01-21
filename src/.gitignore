@@ -3,3 +3,4 @@ cscope.out
 TAGS
 tags
 .gdb_history
+*.o
