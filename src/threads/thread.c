@@ -564,7 +564,14 @@ thread_higher_priority (const struct list_elem *a, const struct list_elem *b,
 void
 thread_set_nice (int nice) 
 {
-  thread_current ()->mlfqs_nice = nice;
+  struct thread *cur = running_thread ();
+  if (nice > MLFQS_NICE_MAX) nice = MLFQS_NICE_MAX;
+  if (nice < MLFQS_NICE_MIN) nice = MLFQS_NICE_MIN;
+  cur->mlfqs_nice = nice;
+  enum intr_level old_level = intr_disable ();
+  thread_mlfqs_update_priority(cur, NULL);
+  thread_yield_for_priority();
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's nice value. */
