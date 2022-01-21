@@ -62,7 +62,6 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
-#define MLFQS_THREAD_PRIORITY_FREQ 4
 #define MLFQS_NICE_DEFAULT 0
 #define MLFQS_NICE_MIN -20
 #define MLFQS_NICE_MAX 20
@@ -183,18 +182,20 @@ thread_mlfqs_update_tick (void)
       mlfqs_load_average = fp_mult (fp_div (fp (59), fp (60)), mlfqs_load_average)
         + fp_div (fp (count_ready_threads), fp (60));
 
-      /* Update all threads' recent_cpu every second. */
+      /* Update all threads' recent_cpu and priority every second. */
       thread_foreach (thread_mlfqs_update_recent_cpu, NULL);
-    }
-  if (timer_ticks () % MLFQS_THREAD_PRIORITY_FREQ == 0)
-    {
-      /* Update all threads' priori every MLFQS_THREAD_PRIORITY_FREQ tick. */
       thread_foreach (thread_mlfqs_update_priority, NULL);
+    }
+  if (timer_ticks () % TIME_SLICE== 0)
+    {
+      /*Update running threads priority every 4 ticks,
+       * as it's the only thread with a changed recent_cpu
+       */
+      thread_mlfqs_update_priority (t, NULL);
     }
 }
 
-/* Updates the priority of T if T->mlfqs_cache_priority is false
-   assuming interrupts are off to prevent a race condition. */
+/* Updates the priority of t */
 static void
 thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
 {
@@ -205,12 +206,10 @@ thread_mlfqs_update_priority (struct thread *t, void *aux UNUSED)
   /* Disable interrupts so thread isn't put on wrong queue
    * in the middle of clamping priority. */
   old_level = intr_disable ();
-  if (t->mlfqs_cache_priority) return;
   t->priority = PRI_MAX - fp_to_int(t->mlfqs_recent_cpu / 4)
                 - (t->mlfqs_nice * 2);
   t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
   t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
-  t->mlfqs_cache_priority = true;
   intr_set_level (old_level);
 }
 
@@ -220,17 +219,13 @@ static void
 thread_mlfqs_update_recent_cpu (struct thread *t, void *aux UNUSED)
 {
   enum intr_level old_level;
-  fp_t old_recent_cpu;
-
   ASSERT (thread_mlfqs);
 
   old_level = intr_disable ();
-  old_recent_cpu = t->mlfqs_recent_cpu;
   fp_t coeff = fp_div(2 * mlfqs_load_average,
                       fp_add_to_int(2 * mlfqs_load_average,  1));
   t->mlfqs_recent_cpu = fp_add_to_int(fp_mult(coeff, t->mlfqs_recent_cpu),
                                       t->mlfqs_nice);
-  t->mlfqs_cache_priority = old_recent_cpu == t->mlfqs_recent_cpu;
   intr_set_level (old_level);
 }
 

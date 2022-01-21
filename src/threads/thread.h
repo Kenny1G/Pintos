@@ -93,7 +93,6 @@ struct thread
     int base_priority;                  /* Before donations priority. */
     int mlfqs_nice;                     /* Niceness value for MLFQS. */
     fp_t mlfqs_recent_cpu;              /* Recent_cpu value for MLFQS. */
-    bool mlfqs_cache_priority;          /* To skip on the next sweep. */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
