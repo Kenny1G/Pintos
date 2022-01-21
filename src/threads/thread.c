@@ -64,6 +64,8 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 bool thread_mlfqs;
 #define MLFQS_THREAD_PRIORITY_FREQ 4
 #define MLFQS_NICE_DEFAULT 0
+#define MLFQS_NICE_MIN -20
+#define MLFQS_NICE_MAX 20
 #define MLFQS_RECENT_CPU_DEFAULT 0
 fp_t mlfqs_load_average;
 
@@ -176,10 +178,10 @@ thread_mlfqs_update_tick (void)
   if (timer_ticks () % TIMER_FREQ == 0)
     {
       /* Update load_average every second. */
-      size_t count_ready_threads = list_size (&ready_list) +
+      int count_ready_threads = list_size (&ready_list) +
                           ((thread_current () != idle_thread) ? 1 : 0);
-      mlfqs_load_average = (mlfqs_load_average * 59)/60 +
-                         fp(count_ready_threads)/60;
+      mlfqs_load_average = fp_mult (fp_div (fp (59), fp (60)), mlfqs_load_average)
+        + fp_div (fp (count_ready_threads), fp (60));
 
       /* Update all threads' recent_cpu every second. */
       thread_foreach (thread_mlfqs_update_recent_cpu, NULL);
@@ -576,7 +578,7 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  return fp_to_nearest_int (fp_mult(mlfqs_load_average, fp(100)));
+  return fp_to_int (fp_mult(mlfqs_load_average, fp(100)));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
