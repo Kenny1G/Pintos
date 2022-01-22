@@ -305,6 +305,23 @@ effecient enough for this application which made us decide on it.
 >> C1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+We added new member variables to the thread struct for the MLFQS
+implementation to track the thread's nice and recent cpu values:
+    `int mlfqs_nice;                     /* Niceness value for MLFQS. */`
+    `fp_t mlfqs_recent_cpu;              /* Recent_cpu value for MLFQS. */`
+
+We added constants for the MLFQS implementation:
+    `#define MLFQS_NICE_DEFAULT 0`
+    `#define MLFQS_NICE_MIN -20`
+    `#define MLFQS_NICE_MAX 20`
+    `#define MLFQS_RECENT_CPU_DEFAULT 0`
+
+We added a global variable to track the load average used for
+recalculating recent_cpu for all threads:
+    `fp_t mlfqs_load_average;`
+
+We added a global variable to track the number of ready threads:
+    `static int thread_num_ready; /*number of threads in ready list*/`
 
 ---- ALGORITHMS ----
 
@@ -331,17 +348,40 @@ ticks   A   B   C   A   B   C   to run
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
+
 It was unclear what to do when the highest priority thread that is not
 the running thread has the same priority as the running thread. However,
 to achieve proper round robin functionality and maximize fairness we
 said that the running thread, A, should yield to an equal priority
 thread, B, if A just ran and B is the highest priority thread in the
 ready queue. Our functionality matches this by only yielding to threads
-of a higher priority unless it just ran in which case it can yield to a
-thread of equal or higher priority.
+of a higher priority unless the current thread just ran in which case 
+it can yield to a thread of equal or higher priority.
+
+In addition, it was unclear if we should recalculate each thread's
+recent cpu value before or after recalulating the priority. We decided 
+to recalculate recent cpu before recalculating priority. This is reflected 
+in the order in which we perform operations in our own code.
 
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
+
+We keep track of how many threads are READY so we don't have to use 
+list_size which has a runtime of O(n), inside the interrupt context.
+This makes our interrupt context faster.
+
+In addition, the design doc specified that we should recalculate
+every thread's priority for which the recent cpu has changed every
+4 timer ticks. However, since the only thread whose recent cpu value
+changes every 4 timer ticks is the current thread, we only recalculate
+the current threads priority every 4 timer ticks. We recalculate every
+threads priority every second after we recalculate every thread's 
+recent cpu value.
+
+We relegated the majority of our scheduling, except for sometimes
+selecting the next thread to run, to the interrupt context. This
+ensures that the threads themselves do not lose time due to
+scheduling processes. 
 
 ---- RATIONALE ----
 
@@ -357,25 +397,26 @@ handout. However, we figured out ready queue would achieve round
 robin functionality well enough for the purposes of this project.
 
 We kept a running count of all threads, adding to the count when
-add to the ready list and removing from the count when we remove
-a thread from the list. We thought this would be more effecient
+adding to the ready list and removing from the count when we remove
+a thread from the list. We thought this would be more efficient
 than having to calculate the size of the ready list every second.
 
-We decided to only use the thread for each to recalculate the
+We decided to only use the thread foreach function to recalculate the
 priority of every thread every second, at the same time that we
 recalculate load average and each thread's recent_cpu. We figured
-this would be a more effecient than recalculating each thread's
-priority eevery 4 ticks because the only thread who's recent cpu
+this would be more efficient than recalculating each thread's
+priority every 4 ticks because the only thread whose recent cpu
 is changing is the ready thread.
 
-If we had more time, we think we'd be interested in redoing how we
-add and remove threads from out priority queue. We could take
-advantage of the existing functions a little more. At the moment,
-We push threads into the back of the queue and then find the
+If we had more time, we think we would be interested in changing 
+how we add and remove threads from our priority queue. We could take
+advantage of the provided functions a little more. At the moment,
+we push threads into the back of the queue and then find the
 maximum priority thread. However, we think we could potentially
 consider inserting the thread in order so that we can pop the
-highest priority thread of the front of the queue. We don't think
-this would change the runtime so much as it might be cleaner style.
+highest priority thread off the front of the queue. We don't think
+this would change the runtime but instead would result in cleaner 
+style.
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
@@ -385,7 +426,7 @@ this would change the runtime so much as it might be cleaner style.
 >> numbers, why did you do so?  If not, why not?
 
 We created an abstraction layer by defining a new type for fixed
-point numbers. This would allow us to ensure that we always pass in
+point numbers. This allows us to ensure that we always pass in
 integers and fixed points in the correct order. We defined a macro,
 F, that standardizes the number of fractional bits we use. We decided
 to only implement the functions that required F in the equation.
@@ -401,15 +442,28 @@ the quarter.
 
 >> In your opinion, was this assignment, or any one of the three problems
 >> in it, too easy or too hard?  Did it take too long or too little time?
+The assignment was fine, nothing too easy or hard, really reinforced my
+conceptual understanding, thank you?
 
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+Working on the advanced scheduler really reinforced my understanding of 
+the 4.4 BSD Scheduler, my bugs and the way they affected the program
+helped me understand why the original designers made the choices they
+did.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
+I would recommend you help students install pintos on their own devices
+the myth machines are an absolute horror to work with.
 
 >> Do you have any suggestions for the TAs to more effectively assist
 >> students, either for future quarters or the remaining projects?
+Office hours are a blast, as a TA myself, I know how difficult it can
+be to have to quickly get acquainted with a foreign code base. I would
+recommend more hours if possible and a hard limit on how much time is
+spent on each student.
 
 >> Any other comments?
+Thank you for your hard work!
