@@ -51,7 +51,7 @@ slept_list, the priority queue of sleeping threads (implemented
 using the provided list structure). Finally, it downs the semaphore 
 that is now associted with the recently slept thread.
 
-When there is a timer interrupt, we call thread_wake_eligible_slept. 
+In the timer interrupt handler, we call thread_wake_eligible_slept. 
 In the function, we iterate through the priority queue of sleeping
 threads, upping the semaphores of the threads who have exhaused
 their sleep time, until we reach a thread who has not yet exhausted 
@@ -76,7 +76,7 @@ woken up.
 >> timer_sleep() simultaneously?
 
 The only shared variable between threads is the slept_list. Since
-we implemented a priority queue for out list, the order in which
+we implemented a priority queue for our list, the order in which
 threads are added to the slept_list matters. Therefore, we disabled
 interrupts in thread_add_to_slept, where the current thread is
 is added to slept_list.
@@ -84,11 +84,14 @@ is added to slept_list.
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
 
-Since we are using a semaphore, if a thread that is interrupted between being 
-added to the slept list and being put to sleep is removed from slept_list before
-it gets a chance to sleep, it does not deadlock as the call to sema_down simply
-will not put it to sleep.
-Other than this case, any other interruption is inconsequential. 
+The only race condition we need to worry about is a thread being interrupted after
+it's added to the slept list but before it's slept. In this case it would be possible
+for the thread to be removed from the slept list before it ever sleeps and then
+when we return to timer_sleep, the thread is slept with no way of waking it up.
+
+Since we are using a semaphore, this deadlock will not happen because when the
+thread is removed from the slept_list, it's semaphore goes up to 1 and so when
+sema down is called the thread never sleeps.
 
 
 ---- RATIONALE ----
@@ -97,11 +100,11 @@ Other than this case, any other interruption is inconsequential.
 >> another design you considered?
 
 This design was chosen as it makes use of existing synchronization primitives as
-opposed to direclty calling thread_block () and unblock. It is also faster than
-using the thread for each to check for threads that need to be woken with the
+opposed to direclty calling thread_block () and unblock(). It is also faster than
+using thread_foreach () to check for threads that need to be awoken with the
 drawback being the fact that the size of the thread struct had to be increased.
-This could be made even more efficient by adding priority queue functionality to
-the existing list data structure so only threads that are woken up are iterated over
+furthermore, By using a priority-queue, we shorten the amount of time spent
+finding threads to wake up.
 
              PRIORITY SCHEDULING
              ===================
