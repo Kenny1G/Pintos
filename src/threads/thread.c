@@ -460,8 +460,12 @@ thread_less_sleep_func (const struct list_elem *a, const struct list_elem *b,
 void
 thread_add_to_slept (void)
 {
+  /*Disable interrupts so updating slept_list is atomic*/
+  enum intr_level old_level = intr_disable();
   struct thread *t = thread_current ();
-  list_insert_ordered(&slept_list, &(t->slept_elem), thread_less_sleep_func, NULL);
+  list_insert_ordered(&slept_list, &(t->slept_elem), 
+                      thread_less_sleep_func, NULL);
+  intr_set_level (old_level);
 }
 
 /* This function wakes sleeping threads that have been asleep
