@@ -31,38 +31,55 @@ Akram Sbaih        <akram@stanford.edu>
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
 Added to struct thread:
-    int64_t sleep_ticks;                /* Number of ticks left to sleep*/
+    int64_t wake_tick;                  /* Number of ticks left to sleep*/
     struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
     struct list_elem slept_elem;        /* List element for slept_threads list*/
 
 A list of slept threads was added so all threads don't have to be checked to 
-find those that should be woken up
+find those that should be woken up.
     static struct list slept_list;
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
-timer_sleep() intiializes the auxiliary variables in the thread struct,
-adds the thread to slept_list and downs the semaphore associated with the thread
+timer_sleep() intiializes a new semaphore, to whose location on
+the stack the currently running thread points. The function then
+sets wake_tick for the current thread, adds the thread to 
+slept_list, the priority queue of sleeping threads (implemented 
+using the provided list structure). Finally, it downs the semaphore 
+that is now associted with the recently slept thread.
 
-When there is a timer interrupt, the list of slept threads is iterated through,
-their sleep_ticks decremented, and all threads whose sleep_ticks are exhausted
-have their semaphore upped
+When there is a timer interrupt, we call thread_wake_eligible_slept. 
+In the function, we iterate through the priority queue of sleeping
+threads, upping the semaphores of the threads who have exhaused
+their sleep time, until we reach a thread who has not yet exhausted 
+their sleep time or the end of the list. 
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
 
-By adding a list that contains only threads that are asleep the kernel doesn't
-have to iterate through every single thread to wake those that are due
+By adding a list that contains only threads that are asleep the kernel 
+doesn't have to iterate through every single thread to wake those that 
+are due to wake. In addition, we chose to indicate when a timer should
+wake by setting wake_tick equal to the current number timer ticks
+plus the number of ticks for which the thread is supposed to sleep.
+This allowed us to implement a priority queue to hold the sleeping
+threads and made it so that we would not even have to check every
+sleeping thread only up to the first thread that's not reday to be 
+woken up. 
 
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
-The only shared variable between threads is the slept_list, The order in which
-threads add themselves to the slept_list is inconsequential. 
+The only shared variable between threads is the slept_list. Since
+we implemented a priority queue for out list, the order in which
+threads are added to the slept_list matters. Therefore, we disabled
+interrupts in thread_add_to_slept, where the current thread is
+is added to slept_list.
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
