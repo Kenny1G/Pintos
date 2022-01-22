@@ -94,21 +94,126 @@ the existing list data structure so only threads that are woken up are iterated 
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+---------
+struct semaphore_elem 
+  {
+    struct list_elem elem;              /* List element. */
+    struct semaphore semaphore;         /* This semaphore. */
+    struct thread *thread;              /* Thread waiting on this semaphore. */
+  };
+We added the `thread` member necessary to sort waiters in a list by their
+thread priority (accessed through the thread member).
+---------
+struct lock 
+  {
+    struct thread *holder;      /* Thread holding lock (for debugging). */
+    struct semaphore semaphore; /* Binary semaphore controlling access. */
+    struct list waiters;        /* List of waiting threads. */
+    struct list_elem elem;      /* Element in thread's donations list. */
+    int max_priority_donation;  /* Of the waiting threads' donations. */
+  };
+We added a `waiters` list to recalculate the `max_priority_donation` member 
+when `waiters` changes. We added `elem` member to place the lock in a thread's
+`locks_held` list so the thread can calculate its maximum donation from locks.
+---------
+struct thread
+  {
+    /* Owned by thread.c. */
+    tid_t tid;                          /* Thread identifier. */
+    enum thread_status status;          /* Thread state. */
+    char name[16];                      /* Name (for debugging purposes). */
+    uint8_t *stack;                     /* Saved stack pointer. */
+    int priority;                       /* Effective priority with donations. */
+    int base_priority;                  /* Original priority without donations. */
+    struct list_elem allelem;           /* List element for all threads list. */
 
+    /* Shared between thread.c and synch.c. */
+    struct list_elem elem;              /* List element. */
+    struct list locks_held;             /* List of the held locks. */
+    struct list_elem lock_elem;         /* Element in a lock waiters list. */
+    struct lock *blocking_lock;         /* The lock blocking if any. */
+    ...
+  };
+We added the `base_priority` member to hold the initial priority of a thread
+before donations. We added `locks_held` as a list of all locks potentially donating
+to the thread. We added `blocking_lock` to point to the lock this thread is waiting
+for and therefore donating to.
+---------
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
+
++-Thread+A-----------+ +-Thread+B-----------+ +-Thread+C-----------+
+|                    | |                    | |                    |
+| locks_held = []    | | locks_held = []    | | locks_held = []    |
+| priority = L       | | priority = H       | | priority = L       |
+| blocking_lock = L1 | | blocking_lock = L1 | | blocking_lock = L2 |
++------------------+-+ +--+-----------------+ +------------------+-+
+                   |      |                                      |
++-Lock+L1----------v------v----+  +-Lock+L2----------------------v-+
+|                              |  |                                |
+| waiters = [A, B]             |  | waiters = [C]                  |
+| max_priority_donation = H    |  | max_priority_donation = L      |
+| holder = D                   |  | holder = D                     |
++------------------+-----------+  +--+-----------------------------+
+                   |                 |
++-Thread+D---------v-----------------v-----------------------------+
+|                                                                  |
+| locks_held = [L1, L2]                                            |
+| priority = L->H                                                  |
+| blocking_lock = NULL                                             |
++------------------------------------------------------------------+
+ 
+ As the diagram shows, we keep track of the maximum priority donated to a
+ lock by keeping a list of waiting threads that try to acquire that lock.
+ Each thread keeps track of the locks it's holding to calculate the 
+ maximum donation it can receive and make it its own priority (e.g. Thread D).
+ This allows for nested donations by recaculating the priorities of the
+ holder thread and all threads it is awaiting.
+ 
 
 ---- ALGORITHMS ----
 
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
+thread_unblock (list_entry (list_pop_min (&sema->waiters, 
+                      thread_higher_priority, NULL), struct thread, elem));
+This line picks the maximum priority waiter from `sema->waiters` and
+unblocks it, instead of just the waiter that happens to be the first
+in the waiters list. A similar line is present in all of the synchronization
+mechanisms implemented.
 
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
+First, disable interrupts to prevent a context switch while we're
+overwriting priorities:
+`old_level = intr_disable ();`
+Then add the current thread to the waiters of the lock and set the lock
+as the `blocking_lock` for our thread:
+`list_push_back(&lock->waiters, &curr_thread->lock_elem);
+  curr_thread->blocking_lock = lock;`
+We update the maximum donated priority to the lock if we can donate more:
+`if (curr_thread->priority > lock->max_priority_donation)
+    lock->max_priority_donation = curr_thread->priority;`
+We recursively update the priorities of the upstream threads to reflect the
+new donation:
+`if (lock->holder != NULL)
+    thread_recalculate_priority (lock->holder, 0);`
+Acquire the lock:
+`sema_down (&lock->semaphore);`
+Finallty, reverse all the abovementioned steps.
+
 
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+The lock is removed from the current thread's list of held locks:
+`list_remove (&lock->elem);`
+Then the priority of the current thread is recalculated to reflect
+the loss of donations:
+`thread_recalculate_priority (thread_current (), 0);`
+Then the lock is released, which forces the current thread to yield to the
+higher priority parent if needed:
+`sema_up (&lock->semaphore);`
 
 ---- SYNCHRONIZATION ----
 
@@ -116,10 +221,35 @@ the existing list data structure so only threads that are woken up are iterated 
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
+We have three lines:
+`  thread_current ()->base_priority = new_priority;
+  thread_recalculate_priority (thread_current (), 0);
+  thread_yield_for_priority ();`
+A possible race condition is where a preemption happens before the second
+line. In that case, the running thread wouldn't have had a chance to
+reflect its new priority in `thread_current ()->priority` set inside
+`thread_recalculate_priority`. This can reschedule a different thread
+with a higher priority such that the CPU is yielded to the wrong thread.
+This is solved by disabling interrupts to prevent preemption. A lock
+can't be used because the timer handler interrupt (which regularly tries
+to read the priority of all threads) would need to acquire that lock, which
+is illegal in an interrupt context.
+
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+We considered a design where threads keep track of their own received donations
+in a struct integer member. The problem with that approach is that it doesn't
+keep track of all donations if multiple are present. On the other hand, it is
+a lot more effecient.
+
+The current design is very modular allowing for nested donations because of
+its tree structure described earlier. On the other hand, it slows down
+scheduling because it needs to recursively update all upstream locks and 
+threads when recalculating priority. It is very readable and effecient enough
+for this application which made us decide on it.
 
               ADVANCED SCHEDULER
               ==================
