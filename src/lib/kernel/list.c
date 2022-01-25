@@ -522,3 +522,15 @@ list_min (struct list *list, list_less_func *less, void *aux)
     }
   return min;
 }
+
+/* Returns the element in LIST with the smallest value according
+   to LESS given auxiliary data AUX.  If there is more than one
+   minimum, returns the one that appears earlier in the list.  If
+   the list is empty, returns its tail. Calls remove on the element*/
+struct list_elem *
+list_pop_min (struct list *list, list_less_func *less, void *aux)
+{
+  struct list_elem *min = list_min (list, less, aux);
+  if (min != NULL) list_remove(min); 
+  return min;
+}
