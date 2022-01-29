@@ -214,6 +214,31 @@ pagedir_set_accessed (uint32_t *pd, const void *vpage, bool accessed)
     }
 }
 
+/* Returns true if UADDR is a valid virtual address in page directory
+   PD along with the entire block of SIZE bytes following UADDR, and 
+   false otherwise. SIZE must be a positive value. */
+bool 
+pagedir_is_user_accessible (uint32_t *pd, const void *uaddr, size_t size)
+{
+  void *current_page;
+
+  ASSERT (pd != NULL);
+  ASSERT (size > 0);
+
+  if (uaddr == NULL)
+    return false;
+  /* Loop over every page in the queried block and check its validity. */
+  for (current_page = pg_round_down (uaddr); 
+       current_page <= pg_round_down (uaddr + size); 
+       current_page += PGSIZE)
+    {
+      if (!is_user_vaddr (current_page) 
+          || pagedir_get_page (pd, current_page) == NULL)
+        return false;
+    } 
+  return true;
+}
+
 /* Loads page directory PD into the CPU's page directory base
    register. */
 void
