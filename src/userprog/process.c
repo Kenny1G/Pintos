@@ -78,7 +78,6 @@ process_execute (const char *file_name)
 
   if (tid == TID_ERROR)
     palloc_free_page (p_info->cmd_line); 
-  free(p_info->program_name);
   free(p_info);
 
   return tid;
@@ -164,7 +163,7 @@ process_exit (void)
   if (cur->process_fn != NULL)
     {
       printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
-      palloc_free_page (cur->process_fn);
+      free (cur->process_fn);
     }
 }
 
