@@ -130,7 +130,8 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  for (;;) 
+    barrier (); /* TODO - implement */
 }
 
 /* Free the current process's resources and print its exit code. */
@@ -140,10 +141,11 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  /* Print termination message */
-  // if (cur->user) // only for user process
-  //   printf ("%s: exit(%d)\n", cur->name, cur->exit_code);
-
+  if (cur->process_fn != NULL)
+    {
+      printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
+      free (cur->process_fn);
+    }
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -159,11 +161,6 @@ process_exit (void)
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
-    }
-  if (cur->process_fn != NULL)
-    {
-      printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
-      free (cur->process_fn);
     }
 }
 
@@ -508,6 +505,7 @@ stack_push(void **esp, void *data, size_t size)
     {
       *esp -= size;
       memcpy(*esp, data, size);
+      // printf ("s top: %x, %x\n", (*esp), esp);
       return true;
     }
   return false;
@@ -541,12 +539,12 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
 
       /* Search for next token. */
       token = strchr(token, '\0') + 1;
-      if (token[0] == " ")
+      if (token[0] == ' ')
         token++;
     }
   
   /* Round stack ptr down to a multiple of 4 so you're word aligned. */
-  esp = (void*) (((intptr_t) esp) & 0xfffffffc);
+  *esp = (void*) (((intptr_t) *esp) & 0xfffffffc);
 
   /* Starting with the nullptr, push address of every string. 
      (char * to memory we just put on the stack) */
@@ -556,11 +554,11 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
     success = stack_push(esp, &argv[i], sizeof(char *));
   /* Push argv (address argv[0]). */
   void *argv_0 = *esp;
-  success = stack_push(esp, &argv_0, sizeof(void*));
+  success = stack_push(esp, &argv_0, sizeof(void *));
   /* Push argc. */
-  success = stack_push(esp, &(argc), sizeof(argc));
+  success = stack_push(esp, &(argc), sizeof(int));
   /* Push the return address. */
-  success = stack_push(esp, &null_ptr, sizeof(null_ptr));
+  success = stack_push(esp, &null_ptr, sizeof(char *));
   return success;
 }
 
