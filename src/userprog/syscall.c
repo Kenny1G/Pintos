@@ -79,7 +79,8 @@ static uint32_t
 syscall_get_arg (struct intr_frame *f, size_t idx)
 {
   uint32_t *arg = (uint32_t *)(f->esp) + idx;
-  if (!pagedir_is_user_accessible (arg))
+  if (!pagedir_is_user_accessible (thread_current ()->pagedir, 
+                                   arg, sizeof (uint32_t)))
     {
       /* TODO - Terminate process. */
       ASSERT (false);
@@ -97,7 +98,7 @@ static void
 syscall_exit (struct intr_frame *f)
 {
   int32_t status = syscall_get_arg (f, 1);
-  thread_current ()->exit_code = status;
+  thread_current ()->process_exit_code = status;
   thread_exit ();
 }
 
@@ -157,9 +158,22 @@ static void
 syscall_write (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  const void *buffer = syscall_get_arg (f, 2);
-  uint32_t size = syscall_get_arg (f, 3);
-  NOT_REACHED ();
+  const char *buffer = syscall_get_arg (f, 2);
+  uint32_t stride, size = syscall_get_arg (f, 3);
+  /* Verify that the entire buffer is valid user memory. */
+  if (!pagedir_is_user_accessible (thread_current ()->pagedir, buffer, size))
+    {
+      /* TODO - Terminate process. */
+      ASSERT (false);
+    }
+  /* For FD==1, print to the console strides of the buffer. */
+  while (fd == 1 && size > 0)
+    {
+      size -= stride = size > 256 ? 256 : size;
+      putbuf(buffer, stride);
+      buffer += stride;
+    }
+  /* TODO - implement write for regular files. */
 }
 
 static void 
