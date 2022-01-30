@@ -50,19 +50,19 @@ process_execute (const char *file_name)
 static void
 start_process (void *file_name_)
 {
-  char *file_name = file_name_;
+  struct thread *cur = thread_current ();
   struct intr_frame if_;
   bool success;
+  cur->process_fn = file_name_;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (cur->process_fn, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
   if (!success) 
     thread_exit ();
 
@@ -91,7 +91,7 @@ process_wait (tid_t child_tid UNUSED)
   return -1;
 }
 
-/* Free the current process's resources. */
+/* Free the current process's resources and print its exit code. */
 void
 process_exit (void)
 {
@@ -113,6 +113,11 @@ process_exit (void)
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
+    }
+  if (cur->process_fn != NULL)
+    {
+      printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
+      palloc_free_page (cur->process_fn);
     }
 }
 

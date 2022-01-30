@@ -104,6 +104,8 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    char *process_fn;                   /* Filename in process_execute. */
+    int32_t process_exit_code;          /* Exit code for process_exit. */
 #endif
     int64_t wake_tick;                /* Number of ticks left to sleep*/
     struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
