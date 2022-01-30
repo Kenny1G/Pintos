@@ -5,6 +5,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
+#include "devices/shutdown.h"
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
@@ -88,9 +89,12 @@ syscall_get_arg (struct intr_frame *f, size_t idx)
   return *arg;
 }
 
+/* Shuts down the machine by calling shutdown_power_off.
+   Never returns. */
 static void 
 syscall_halt (struct intr_frame *f)
 {
+  shutdown_power_off ();
   NOT_REACHED ();
 }
 
