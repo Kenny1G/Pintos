@@ -90,28 +90,29 @@ syscall_get_arg (struct intr_frame *f, size_t idx)
 static void 
 syscall_halt (struct intr_frame *f)
 {
-
+  NOT_REACHED ();
 }
 
 static void 
 syscall_exit (struct intr_frame *f)
 {
   int32_t status = syscall_get_arg (f, 1);
-
+  thread_current ()->exit_code = status;
+  thread_exit ();
 }
 
 static void 
 syscall_exec (struct intr_frame *f)
 {
   const char *cmd_line = syscall_get_arg (f, 1);
-
+  NOT_REACHED ();
 }
 
 static void 
 syscall_wait (struct intr_frame *f)
 {
   tid_t pid = syscall_get_arg (f, 1);
-
+  NOT_REACHED ();
 }
 
 static void 
@@ -119,28 +120,28 @@ syscall_create (struct intr_frame *f)
 {
   const char *file = syscall_get_arg (f, 1);
   uint32_t initial_size = syscall_get_arg (f, 2);
-
+  NOT_REACHED ();
 }
 
 static void 
 syscall_remove (struct intr_frame *f)
 {
   const char *file = syscall_get_arg (f, 1);
-
+  NOT_REACHED ();
 }
 
 static void 
 syscall_open (struct intr_frame *f)
 {
   const char *file = syscall_get_arg (f, 1);
-
+  NOT_REACHED ();
 }
 
 static void 
 syscall_filesize (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-
+  NOT_REACHED ();
 }
 
 static void 
@@ -149,7 +150,7 @@ syscall_read (struct intr_frame *f)
   int32_t fd = syscall_get_arg (f, 1);
   void *buffer = syscall_get_arg (f, 2);
   uint32_t size = syscall_get_arg (f, 3);
-
+  NOT_REACHED ();
 }
 
 static void 
@@ -158,7 +159,7 @@ syscall_write (struct intr_frame *f)
   int32_t fd = syscall_get_arg (f, 1);
   const void *buffer = syscall_get_arg (f, 2);
   uint32_t size = syscall_get_arg (f, 3);
-
+  NOT_REACHED ();
 }
 
 static void 
@@ -166,19 +167,19 @@ syscall_seek (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
   uint32_t position = syscall_get_arg (f, 2);
-
+  NOT_REACHED ();
 }
 
 static void 
 syscall_tell (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-
+  NOT_REACHED ();
 }
 
 static void 
 syscall_close (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-
+  NOT_REACHED ();
 }
