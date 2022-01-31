@@ -505,7 +505,6 @@ stack_push(void **esp, void *data, size_t size)
     {
       *esp -= size;
       memcpy(*esp, data, size);
-      // printf ("s top: %x, %x\n", (*esp), esp);
       return true;
     }
   return false;
