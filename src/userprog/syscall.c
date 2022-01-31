@@ -12,8 +12,8 @@
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
-static bool syscall_validate_user_memory (const void *uaddr, size_t size);
-static bool syscall_validate_user_string (const char *uaddr, size_t max_size);
+static void syscall_validate_user_memory (const void *uaddr, size_t size);
+static void syscall_validate_user_string (const char *uaddr, size_t max_size);
 static void syscall_terminate_process (void);
 
 /* Array of syscall handler functions to dispatch on interrupt. */
@@ -85,11 +85,11 @@ syscall_terminate_process (void)
 }
 
 
-/* Returns true if UADDR is a valid virtual address in the page directory
+/* Returns if UADDR is a valid virtual address in the page directory
    of the curren thread along with the entire block of SIZE bytes following 
-   UADDR. Otherwise, calls syscall_terminate_process and returns false.
+   UADDR. Otherwise, calls syscall_terminate_process and never returns.
    SIZE must be a positive value. */
-static bool 
+static void 
 syscall_validate_user_memory (const void *uaddr, size_t size)
 {
   const void *current_page;
@@ -98,10 +98,7 @@ syscall_validate_user_memory (const void *uaddr, size_t size)
   ASSERT (size > 0);
 
   if (uaddr == NULL)
-    {
       syscall_terminate_process ();
-      return false;
-    }
   /* Loop over every page in the queried block and check its validity. */
   for (current_page = pg_round_down (uaddr); 
        current_page <= pg_round_down ((const uint8_t *)uaddr + size); 
@@ -110,20 +107,16 @@ syscall_validate_user_memory (const void *uaddr, size_t size)
       if (!is_user_vaddr (current_page) 
           || pagedir_get_page (thread_current ()->pagedir, 
                                current_page) == NULL)
-        {
           syscall_terminate_process ();
-          return false;
-        }
     } 
-  return true;
 }
 
-/* Returns true if UADDR points to a valid null-terminated string in the
+/* Returns if UADDR points to a valid null-terminated string in the
    current thread's page directory or if no null-terminator is found
    in the MAX_SIZE valid chars following UADDR. Otherwise, calls
-   syscall_terminate_process and returns false.
+   syscall_terminate_process and never returns.
    MAX_SIZE must be positive. */
-static bool 
+static void 
 syscall_validate_user_string (const char *uaddr, size_t max_size)
 {
   const char *caddr = uaddr;
@@ -133,12 +126,10 @@ syscall_validate_user_string (const char *uaddr, size_t max_size)
 
   for (; caddr != uaddr + max_size + 1; ++caddr)
     {
-      if (!syscall_validate_user_memory (caddr, sizeof (char)))
-        return false;
+      syscall_validate_user_memory (caddr, sizeof (char));
       if (*caddr == '\0')
-        return true;
+        break;
     }
-  return true;
 }
 
 /* Returns argument number IDX passed to the system call threough
@@ -173,6 +164,7 @@ syscall_exit (struct intr_frame *f)
 static void 
 syscall_exec (struct intr_frame *f)
 {
+  /* TODO - Test me! Remember child process. */
   const char *cmd_line = syscall_get_arg (f, 1);
   syscall_validate_user_string (cmd_line, PGSIZE);
   tid_t tid = process_execute (cmd_line);
@@ -237,6 +229,7 @@ syscall_write (struct intr_frame *f)
     {
       size -= stride = size > 256 ? 256 : size;
       putbuf(buffer, stride);
+
       buffer += stride;
     }
   /* TODO - implement write for regular files. */
