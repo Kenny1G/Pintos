@@ -174,7 +174,7 @@ static void
 syscall_exec (struct intr_frame *f)
 {
   const char *cmd_line = syscall_get_arg (f, 1);
-
+  syscall_validate_user_string (cmd_line, PGSIZE);
   tid_t tid = process_execute (cmd_line);
   f->eax = tid;
 }
@@ -231,11 +231,7 @@ syscall_write (struct intr_frame *f)
   const char *buffer = syscall_get_arg (f, 2);
   uint32_t stride, size = syscall_get_arg (f, 3);
   /* Verify that the entire buffer is valid user memory. */
-  if (!pagedir_is_user_accessible (thread_current ()->pagedir, buffer, size))
-    {
-      /* TODO - Terminate process. */
-      ASSERT (false);
-    }
+  syscall_validate_user_memory (buffer, size);
   /* For FD==1, print to the console strides of the buffer. */
   while (fd == 1 && size > 0)
     {
