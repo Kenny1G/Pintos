@@ -1,11 +1,13 @@
 #include "userprog/syscall.h"
 #include "userprog/pagedir.h"
+#include "userprog/process.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include <stddef.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
+#include "threads/vaddr.h"
 #include "devices/shutdown.h"
 
 static void syscall_handler (struct intr_frame *);
@@ -172,7 +174,7 @@ static void
 syscall_exec (struct intr_frame *f)
 {
   const char *cmd_line = syscall_get_arg (f, 1);
-  /* TODO */
+
   tid_t tid = process_execute (cmd_line);
   f->eax = tid;
 }
