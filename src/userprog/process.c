@@ -20,15 +20,25 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 
+/* Processes acquire this lock when modifying their parent or children
+ to prevent race conditions when multiple processes exit at the same time. */
+static struct lock process_child_lock;
+struct process_child {
+  struct list_elem elem;
+  int32_t exit_code;
+  struct semaphore exited;
+}
+
 /* Used to pass info concerning the process' name and arguments from
    process_execute() to start_process() to load(). Also holds a
    semaphore that ensures the process does not start running until
    the args have been fully loaded into the stack. */
 struct process_info {
   char *cmd_line;           /* Pointer to the cmd line of args on the heap. */
-  char *program_name;        /* Pointer to the program name (first arg). */
+  char *program_name;       /* Pointer to the program name (first arg). */
   struct semaphore loaded;  /* Prevents the thread from running until process
                                info is loaded in the stack */
+  struct list_elem *child_elem; /* Pointer to process_child.elem in parent. */
 };
 
 static thread_func start_process NO_RETURN;
@@ -45,11 +55,13 @@ process_execute (const char *file_name)
 {
   tid_t tid;
   struct process_info *p_info = calloc (1, sizeof(struct process_info));
-  if (p_info == NULL)
+  struct process_child *p_child = calloc (1, sizeof(struct process_child));
+  if (p_info == NULL || p_child == NULL)
     return TID_ERROR;
 
   /* Initialize process semaphore. */
   sema_init (&p_info->loaded, 0);
+  sema_init (&p_child->exited, 0);
 
   /* Make a copy of FILE_NAME (the command line).
      Otherwise there's a race between the caller and load(). */
@@ -130,8 +142,10 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  for (;;) 
-    barrier (); /* TODO - implement */
+  
+  return 0;
+  // for (;;) 
+  //   barrier (); /* TODO - implement */
 }
 
 /* Free the current process's resources and print its exit code. */

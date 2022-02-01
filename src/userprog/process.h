@@ -3,6 +3,15 @@
 
 #include "threads/thread.h"
 
+/* Keeps track of the status of a child in the list of children
+   of a parent thread. */
+struct process_child {
+  tid_t tid;
+  struct list_elem elem;
+  int32_t exit_code;
+  struct semaphore exited;
+}
+
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
 void process_exit (void);
