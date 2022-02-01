@@ -23,11 +23,6 @@
 /* Processes acquire this lock when modifying their parent or children
  to prevent race conditions when multiple processes exit at the same time. */
 static struct lock process_child_lock;
-struct process_child {
-  struct list_elem elem;
-  int32_t exit_code;
-  struct semaphore exited;
-}
 
 /* Used to pass info concerning the process' name and arguments from
    process_execute() to start_process() to load(). Also holds a
@@ -38,7 +33,7 @@ struct process_info {
   char *program_name;       /* Pointer to the program name (first arg). */
   struct semaphore loaded;  /* Prevents the thread from running until process
                                info is loaded in the stack */
-  struct list_elem *child_elem; /* Pointer to process_child.elem in parent. */
+  struct process_child *inparent; /* Pointer to record of current process in parent. */
 };
 
 static thread_func start_process NO_RETURN;
@@ -54,44 +49,62 @@ tid_t
 process_execute (const char *file_name) 
 {
   tid_t tid;
+
   struct process_info *p_info = calloc (1, sizeof(struct process_info));
   struct process_child *p_child = calloc (1, sizeof(struct process_child));
   if (p_info == NULL || p_child == NULL)
-    return TID_ERROR;
+    {
+      tid = TID_ERROR;
+      goto done;
+    }
 
   /* Initialize process semaphore. */
   sema_init (&p_info->loaded, 0);
   sema_init (&p_child->exited, 0);
 
+  /* Add a pointer to child's record in parent to link them after creating the thread. */
+  p_info->inparent = p_child;
+
   /* Make a copy of FILE_NAME (the command line).
      Otherwise there's a race between the caller and load(). */
   p_info->cmd_line = palloc_get_page (0);
   if (p_info->cmd_line == NULL) 
-  {
-    free (p_info); /* make sure to free heap memory */
-    return TID_ERROR;
-  }
+    {
+      tid = TID_ERROR;
+      goto done;
+    }
   strlcpy (p_info->cmd_line, file_name, PGSIZE);
   
   /* Parse out program name without modifying str */
   size_t len_prog_name = strcspn(p_info->cmd_line, " ");
   p_info->program_name = calloc(sizeof(char), len_prog_name + 1);
   if (p_info->program_name == NULL) 
-  {
-    palloc_free_page (p_info->cmd_line);
-    free (p_info);
-    return TID_ERROR;
-  }
+    {
+      tid = TID_ERROR;
+      goto done;
+    }
   memcpy(p_info->program_name, p_info->cmd_line, len_prog_name);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (p_info->program_name, PRI_DEFAULT, start_process, p_info);
   sema_down (&p_info->loaded);
 
+done: /* Arrives here on success or error. */
   if (tid == TID_ERROR)
-    palloc_free_page (p_info->cmd_line); 
-  free(p_info);
-
+    {
+      if (p_info != NULL) 
+        palloc_free_page (p_info->cmd_line); 
+      free (p_info);
+      free (p_child);
+    }
+  else
+    {
+      /* Add child process to the list of children. */
+      lock_acquire (&process_child_lock);
+      p_child->tid = tid;
+      list_push_back (&thread_current ()->process_children, &p_child->elem);
+      lock_release (&process_child_lock);
+    }
   return tid;
 }
 
@@ -104,7 +117,12 @@ start_process (void *file_name_)
   struct thread *cur = thread_current ();
   struct intr_frame if_;
   bool success;
+
+  /* Set up received member values. */
   cur->process_fn = p_info->program_name;
+  lock_acquire (&process_child_lock);
+  cur->inparent = p_info->inparent;
+  lock_release (&process_child_lock);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
