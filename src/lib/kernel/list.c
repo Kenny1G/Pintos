@@ -292,6 +292,20 @@ list_back (struct list *list)
   return list->tail.prev;
 }
 
+/* Returns the first list_elem in LIST that evaluates to
+   true after running it through FIND_FUNC with AUX.
+   If no such element exists, returns NULL. */
+struct list_elem *
+list_find (const struct list *list, list_find_func *find_func, const void *aux)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
+      if (find_func (e, aux))
+        return e;
+  return NULL;
+}
+
 /* Returns the number of elements in LIST.
    Runs in O(n) in the number of elements. */
 size_t
