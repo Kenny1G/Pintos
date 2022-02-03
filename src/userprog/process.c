@@ -41,6 +41,12 @@ static bool load (struct process_info *p_info, void (**eip) (void), void **esp);
 static bool pass_args_to_stack(struct process_info *p_info, void **esp);
 static bool stack_push(void **esp, void *data, size_t size);
 
+void
+process_init (void)
+{
+  lock_init(&process_child_lock);
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -63,10 +69,11 @@ process_execute (const char *file_name)
   sema_init (&p_child->exited, 0);
 
   /* Add a pointer to child's record in parent to link them after creating the thread. */
+  p_child->thread = NULL;
+  p_info->inparent = p_child;
   lock_acquire (&process_child_lock);
   list_push_back (&thread_current ()->process_children, &p_child->elem);
   lock_release (&process_child_lock);
-  p_info->inparent = p_child;
 
   /* Make a copy of FILE_NAME (the command line).
      Otherwise there's a race between the caller and load(). */
@@ -150,8 +157,8 @@ start_process (void *file_name_)
 static bool
 process_elem_tid_equal (struct list_elem *elem, void *aux)
 {
-  return list_entry (elem, struct process_child, elem)->thread->tid 
-         == *(tid_t *)aux;
+  struct process_child *child = list_entry (elem, struct process_child, elem);
+  return child->thread != NULL && child->thread->tid == *(tid_t *)aux;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -214,7 +221,8 @@ process_exit (void)
        curr_child_elem = list_remove (curr_child_elem))
     {
       curr_child = list_entry (curr_child_elem, struct process_child, elem);
-      curr_child->thread->inparent = NULL;
+      if (curr_child->thread != NULL)
+        curr_child->thread->inparent = NULL;
       free (curr_child);
     }
   lock_release (&process_child_lock);
