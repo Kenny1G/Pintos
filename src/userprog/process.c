@@ -63,6 +63,9 @@ process_execute (const char *file_name)
   sema_init (&p_child->exited, 0);
 
   /* Add a pointer to child's record in parent to link them after creating the thread. */
+  lock_acquire (&process_child_lock);
+  list_push_back (&thread_current ()->process_children, &p_child->elem);
+  lock_release (&process_child_lock);
   p_info->inparent = p_child;
 
   /* Make a copy of FILE_NAME (the command line).
@@ -95,15 +98,9 @@ done: /* Arrives here on success or error. */
       if (p_info != NULL) 
         palloc_free_page (p_info->cmd_line); 
       free (p_info);
+      if (p_child != NULL)
+        list_remove (&p_child->elem);
       free (p_child);
-    }
-  else
-    {
-      /* Add child process to the list of children. */
-      lock_acquire (&process_child_lock);
-      p_child->tid = tid;
-      list_push_back (&thread_current ()->process_children, &p_child->elem);
-      lock_release (&process_child_lock);
     }
   return tid;
 }
@@ -122,6 +119,8 @@ start_process (void *file_name_)
   cur->process_fn = p_info->program_name;
   lock_acquire (&process_child_lock);
   cur->inparent = p_info->inparent;
+  if (cur->inparent != NULL)
+      cur->inparent->thread = cur;
   lock_release (&process_child_lock);
 
   /* Initialize interrupt frame and load executable. */
@@ -148,22 +147,44 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
+static bool
+process_elem_tid_equal (struct list_elem *elem, void *aux)
+{
+  return list_entry (elem, struct process_child, elem)->thread->tid 
+         == *(tid_t *)aux;
+}
+
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
-   immediately, without waiting.
-
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+   immediately, without waiting. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  
-  return 0;
-  // for (;;) 
-  //   barrier (); /* TODO - implement */
+  struct list_elem *child_elem;
+  struct process_child *child;
+  int exit_code;
+
+  lock_acquire (&process_child_lock);
+  child_elem = list_find(&thread_current ()->process_children, 
+                         process_elem_tid_equal, &child_tid);
+  lock_release (&process_child_lock);
+
+  if (child_elem != NULL)
+    {
+      child = list_entry (child_elem, struct process_child, elem);
+      sema_down (&child->exited);
+      lock_acquire (&process_child_lock);
+      exit_code = child->exit_code;
+      list_remove (&child->elem);
+      free (child);
+      lock_release (&process_child_lock);
+      return exit_code;
+    }
+  else
+    return -1;
 }
 
 /* Free the current process's resources and print its exit code. */
@@ -171,6 +192,8 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+  struct list_elem *curr_child_elem;
+  struct process_child *curr_child;
   uint32_t *pd;
 
   if (cur->process_fn != NULL)
@@ -178,6 +201,23 @@ process_exit (void)
       printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
       free (cur->process_fn);
     }
+  lock_acquire (&process_child_lock);
+  /* Update the parent (if exists) that this child has exited. */
+  if (cur->inparent != NULL)
+    {
+      cur->inparent->exit_code = cur->process_exit_code;
+      sema_up (&cur->inparent->exited);
+    }
+  /* Orphan all child processes. */
+  for (curr_child_elem = list_begin (&cur->process_children); 
+       curr_child_elem != list_end (&cur->process_children);
+       curr_child_elem = list_remove (curr_child_elem))
+    {
+      curr_child = list_entry (curr_child_elem, struct process_child, elem);
+      curr_child->thread->inparent = NULL;
+      free (curr_child);
+    }
+  lock_release (&process_child_lock);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
