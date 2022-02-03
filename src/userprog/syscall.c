@@ -164,7 +164,6 @@ syscall_exit (struct intr_frame *f)
 static void 
 syscall_exec (struct intr_frame *f)
 {
-  /* TODO - Test me! Remember child process. */
   const char *cmd_line = syscall_get_arg (f, 1);
   syscall_validate_user_string (cmd_line, PGSIZE);
   tid_t tid = process_execute (cmd_line);
@@ -174,8 +173,9 @@ syscall_exec (struct intr_frame *f)
 static void 
 syscall_wait (struct intr_frame *f)
 {
-  tid_t pid = syscall_get_arg (f, 1);
-  NOT_REACHED ();
+  tid_t tid = syscall_get_arg (f, 1);
+  int32_t exit_code = process_wait (tid);
+  f->eax = exit_code;
 }
 
 static void 
