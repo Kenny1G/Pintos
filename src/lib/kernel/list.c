@@ -296,7 +296,7 @@ list_back (struct list *list)
    true after running it through FIND_FUNC with AUX.
    If no such element exists, returns NULL. */
 struct list_elem *
-list_find (const struct list *list, list_find_func *find_func, const void *aux)
+list_find (struct list *list, list_find_func *find_func, void *aux)
 {
   struct list_elem *e;
 

@@ -106,8 +106,12 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     char *process_fn;                   /* Filename in process_execute. */
     int32_t process_exit_code;          /* Exit code for process_exit. */
+    /* Guarded by process.c/process_child_lock. */
+    struct process_child *inparent;     /* Record of T in its parent. 
+                                           NULL if orphaned. */
+    struct list process_children;       /* List of child processes. */
 #endif
-    int64_t wake_tick;                /* Number of ticks left to sleep*/
+    int64_t wake_tick;                  /* Number of ticks left to sleep*/
     struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
     struct list_elem slept_elem;        /* List element for slept_threads list*/
 

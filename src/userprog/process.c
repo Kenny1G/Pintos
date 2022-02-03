@@ -20,21 +20,32 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 
+/* Processes acquire this lock when modifying their parent or children
+ to prevent race conditions when multiple processes exit at the same time. */
+static struct lock process_child_lock;
+
 /* Used to pass info concerning the process' name and arguments from
    process_execute() to start_process() to load(). Also holds a
    semaphore that ensures the process does not start running until
    the args have been fully loaded into the stack. */
 struct process_info {
   char *cmd_line;           /* Pointer to the cmd line of args on the heap. */
-  char *program_name;        /* Pointer to the program name (first arg). */
+  char *program_name;       /* Pointer to the program name (first arg). */
   struct semaphore loaded;  /* Prevents the thread from running until process
                                info is loaded in the stack */
+  struct process_child *inparent; /* Pointer to record of current process in parent. */
 };
 
 static thread_func start_process NO_RETURN;
 static bool load (struct process_info *p_info, void (**eip) (void), void **esp);
 static bool pass_args_to_stack(struct process_info *p_info, void **esp);
 static bool stack_push(void **esp, void *data, size_t size);
+
+void
+process_init (void)
+{
+  lock_init(&process_child_lock);
+}
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -44,42 +55,60 @@ tid_t
 process_execute (const char *file_name) 
 {
   tid_t tid;
+
   struct process_info *p_info = calloc (1, sizeof(struct process_info));
-  if (p_info == NULL)
-    return TID_ERROR;
+  struct process_child *p_child = calloc (1, sizeof(struct process_child));
+  if (p_info == NULL || p_child == NULL)
+    {
+      tid = TID_ERROR;
+      goto done;
+    }
 
   /* Initialize process semaphore. */
   sema_init (&p_info->loaded, 0);
+  sema_init (&p_child->exited, 0);
+
+  /* Add a pointer to child's record in parent to link them after creating the thread. */
+  p_child->thread = NULL;
+  p_info->inparent = p_child;
+  lock_acquire (&process_child_lock);
+  list_push_back (&thread_current ()->process_children, &p_child->elem);
+  lock_release (&process_child_lock);
 
   /* Make a copy of FILE_NAME (the command line).
      Otherwise there's a race between the caller and load(). */
   p_info->cmd_line = palloc_get_page (0);
   if (p_info->cmd_line == NULL) 
-  {
-    free (p_info); /* make sure to free heap memory */
-    return TID_ERROR;
-  }
+    {
+      tid = TID_ERROR;
+      goto done;
+    }
   strlcpy (p_info->cmd_line, file_name, PGSIZE);
   
   /* Parse out program name without modifying str */
   size_t len_prog_name = strcspn(p_info->cmd_line, " ");
   p_info->program_name = calloc(sizeof(char), len_prog_name + 1);
   if (p_info->program_name == NULL) 
-  {
-    palloc_free_page (p_info->cmd_line);
-    free (p_info);
-    return TID_ERROR;
-  }
+    {
+      tid = TID_ERROR;
+      goto done;
+    }
   memcpy(p_info->program_name, p_info->cmd_line, len_prog_name);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (p_info->program_name, PRI_DEFAULT, start_process, p_info);
   sema_down (&p_info->loaded);
 
+done: /* Arrives here on success or error. */
   if (tid == TID_ERROR)
-    palloc_free_page (p_info->cmd_line); 
-  free(p_info);
-
+    {
+      if (p_info != NULL) 
+        palloc_free_page (p_info->cmd_line); 
+      free (p_info);
+      if (p_child != NULL)
+        list_remove (&p_child->elem);
+      free (p_child);
+    }
   return tid;
 }
 
@@ -92,7 +121,14 @@ start_process (void *file_name_)
   struct thread *cur = thread_current ();
   struct intr_frame if_;
   bool success;
+
+  /* Set up received member values. */
   cur->process_fn = p_info->program_name;
+  lock_acquire (&process_child_lock);
+  cur->inparent = p_info->inparent;
+  if (cur->inparent != NULL)
+      cur->inparent->thread = cur;
+  lock_release (&process_child_lock);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -118,20 +154,44 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
+static bool
+process_elem_tid_equal (struct list_elem *elem, void *aux)
+{
+  struct process_child *child = list_entry (elem, struct process_child, elem);
+  return child->thread != NULL && child->thread->tid == *(tid_t *)aux;
+}
+
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
-   immediately, without waiting.
-
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+   immediately, without waiting. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  for (;;) 
-    barrier (); /* TODO - implement */
+  struct list_elem *child_elem;
+  struct process_child *child;
+  int exit_code;
+
+  lock_acquire (&process_child_lock);
+  child_elem = list_find(&thread_current ()->process_children, 
+                         process_elem_tid_equal, &child_tid);
+  lock_release (&process_child_lock);
+
+  if (child_elem != NULL)
+    {
+      child = list_entry (child_elem, struct process_child, elem);
+      sema_down (&child->exited);
+      lock_acquire (&process_child_lock);
+      exit_code = child->exit_code;
+      list_remove (&child->elem);
+      free (child);
+      lock_release (&process_child_lock);
+      return exit_code;
+    }
+  else
+    return -1;
 }
 
 /* Free the current process's resources and print its exit code. */
@@ -139,6 +199,8 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+  struct list_elem *curr_child_elem;
+  struct process_child *curr_child;
   uint32_t *pd;
 
   if (cur->process_fn != NULL)
@@ -146,6 +208,24 @@ process_exit (void)
       printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
       free (cur->process_fn);
     }
+  lock_acquire (&process_child_lock);
+  /* Update the parent (if exists) that this child has exited. */
+  if (cur->inparent != NULL)
+    {
+      cur->inparent->exit_code = cur->process_exit_code;
+      sema_up (&cur->inparent->exited);
+    }
+  /* Orphan all child processes. */
+  for (curr_child_elem = list_begin (&cur->process_children); 
+       curr_child_elem != list_end (&cur->process_children);
+       curr_child_elem = list_remove (curr_child_elem))
+    {
+      curr_child = list_entry (curr_child_elem, struct process_child, elem);
+      if (curr_child->thread != NULL)
+        curr_child->thread->inparent = NULL;
+      free (curr_child);
+    }
+  lock_release (&process_child_lock);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
