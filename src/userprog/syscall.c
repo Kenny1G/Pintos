@@ -169,7 +169,7 @@ syscall_exit (struct intr_frame *f)
 static void 
 syscall_exec (struct intr_frame *f)
 {
-  const char *cmd_line = syscall_get_arg (f, 1);
+  const char *cmd_line = (const char* ) syscall_get_arg (f, 1);
   syscall_validate_user_string (cmd_line, PGSIZE);
   tid_t tid = process_execute (cmd_line);
   f->eax = tid;
@@ -198,14 +198,14 @@ syscall_create (struct intr_frame *f)
 static void 
 syscall_remove (struct intr_frame *f)
 {
-  const char *file = syscall_get_arg (f, 1);
+  const char *file_name = (const char* ) syscall_get_arg (f, 1);
   NOT_REACHED ();
 }
 
 static void 
 syscall_open (struct intr_frame *f)
 {
-  const char *file = syscall_get_arg (f, 1);
+  const char *file_name = (const char* ) syscall_get_arg (f, 1);
   NOT_REACHED ();
 }
 
@@ -220,7 +220,7 @@ static void
 syscall_read (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  void *buffer = syscall_get_arg (f, 2);
+  void *buffer = (void *) syscall_get_arg (f, 2);
   uint32_t size = syscall_get_arg (f, 3);
   NOT_REACHED ();
 }
@@ -229,7 +229,7 @@ static void
 syscall_write (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  const char *buffer = syscall_get_arg (f, 2);
+  const char *buffer = (const char* ) syscall_get_arg (f, 2);
   uint32_t stride, size = syscall_get_arg (f, 3);
   /* Verify that the entire buffer is valid user memory. */
   syscall_validate_user_memory (buffer, size);
