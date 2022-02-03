@@ -9,6 +9,9 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
+#include "filesys/filesys.h"
+
+struct lock fsys_lock;
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
@@ -55,6 +58,8 @@ syscall_init (void)
   syscall_handlers[SYS_CLOSE] = syscall_close;
   barrier ();  /* Write all handlers before starting syscalls. */ 
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+
+  lock_init (&fsys_lock);
 }
 
 static void
@@ -181,9 +186,13 @@ syscall_wait (struct intr_frame *f)
 static void 
 syscall_create (struct intr_frame *f)
 {
-  const char *file = syscall_get_arg (f, 1);
+  const char *file_name = (const char* ) syscall_get_arg (f, 1);
   uint32_t initial_size = syscall_get_arg (f, 2);
-  NOT_REACHED ();
+  syscall_validate_user_string(file_name, PGSIZE);
+
+  lock_acquire (&fsys_lock);
+  f->eax = filesys_create (file_name, initial_size);
+  lock_release (&fsys_lock);
 }
 
 static void 
