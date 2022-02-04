@@ -86,7 +86,9 @@ syscall_handler (struct intr_frame *f)
 static void 
 syscall_terminate_process (void)
 {
-   /* TODO - exit thread and free up all resources. */
+   /* TODO - free up all resources. */
+  thread_current()->process_exit_code = -1;
+  thread_exit();
 }
 
 
