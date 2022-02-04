@@ -55,6 +55,14 @@ syscall_file_lookup (const char *file_name)
   return e != NULL ? hash_entry(e, struct syscall_file, hash_elem) : NULL;
 }
 
+static void 
+syscall_file_hash_delete (struct syscall_file *f)
+{
+  hash_delete(&syscall_file_table, &f->hash_elem);
+  if (f->file_name != NULL) free (f->file_name);
+  free (f);
+}
+
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
@@ -357,5 +365,26 @@ static void
 syscall_close (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  NOT_REACHED ();
+
+  struct process_fd *process_fd = process_get_fd (thread_current (), fd);
+      if (process_fd == NULL)
+        return;
+  
+  struct syscall_file *file_wrapper = syscall_file_lookup(fd);
+
+  lock_acquire(&syscall_file_lock);
+  file_close (process_fd->file);
+
+  /* Modify file_wrapper's */
+  file_wrapper->count--;
+  if (file_wrapper->count == 0)
+    {
+      if (file_wrapper->marked_del)
+        filesys_remove(process_fd->file_name);
+      syscall_file_hash_delete(file_wrapper);
+    }
+
+  process_remove_fd (thread_current(), fd);
+
+  lock_release(&syscall_file_lock);
 }
