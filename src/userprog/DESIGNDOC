@@ -91,6 +91,19 @@ mutiple threads on the same string because strtok_r() modifies the string.
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
 
+The UNIX approach scopes arguemnt handling more appropriately, handling  
+parsing in the shell keeps all argument parsing client-side. This isolation
+helps prevents introducing additional complexity and bugs in the kernel. It 
+shoudln't be the kerenel's job to parse arguments since there is no reason it
+can't be done on the user side. Also if the argument parsing results in a
+crash, it's better to crash the shell than the kernel.
+
+The Pintos approach is also just a more naive implementation. Since Pintos 
+just parses the command lines as tokens separated by white space, it cannot 
+handle additional complexity within arguments, such as differentiating between 
+an argument starting with '-' vs one starting with '--'. However, the UNIX 
+shell can easily handle parsing more complicated argument structures.
+
                  SYSTEM CALLS
                  ============
 
@@ -99,6 +112,11 @@ mutiple threads on the same string because strtok_r() modifies the string.
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
+FOR DENY WRITES:
+To allow us to properly deny writes, we added a file pointer to the executable
+file that spawened the process to the thread struct. 
+ `struct file* exec_file;             /* The file that spawned this process*/`
 
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
