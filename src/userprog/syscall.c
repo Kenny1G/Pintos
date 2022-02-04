@@ -12,6 +12,7 @@
 #include "filesys/filesys.h"
 
 struct lock fsys_lock;
+struct lock syscall_file_lock;  /*Lock to synchronize filesystem access*/
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
@@ -59,7 +60,7 @@ syscall_init (void)
   barrier ();  /* Write all handlers before starting syscalls. */ 
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
-  lock_init (&fsys_lock);
+  lock_init (&syscall_file_lock);
 }
 
 static void
@@ -192,9 +193,9 @@ syscall_create (struct intr_frame *f)
   uint32_t initial_size = syscall_get_arg (f, 2);
   syscall_validate_user_string(file_name, PGSIZE);
 
-  lock_acquire (&fsys_lock);
+  lock_acquire (&syscall_file_lock);
   f->eax = filesys_create (file_name, initial_size);
-  lock_release (&fsys_lock);
+  lock_release (&syscall_file_lock);
 }
 
 static void 
