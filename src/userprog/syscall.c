@@ -11,7 +11,6 @@
 #include "devices/shutdown.h"
 #include "filesys/filesys.h"
 
-struct lock fsys_lock;
 struct lock syscall_file_lock;  /*Lock to synchronize filesystem access*/
 
 static void syscall_handler (struct intr_frame *);
