@@ -251,13 +251,13 @@ syscall_remove (struct intr_frame *f)
 static void 
 syscall_open (struct intr_frame *f)
 {
-  char *file_name = (char* ) syscall_get_arg (f, 1);
+  const char *file_name = (const char *) syscall_get_arg (f, 1);
   syscall_validate_user_string(file_name, PGSIZE);
   struct syscall_file *file_wrapper = syscall_file_lookup(file_name);
 
   if (file_wrapper != NULL)
     {
-      /*Ensure file_name hasn't been marked for deletion*/
+      /* Ensure file_name hasn't been marked for deletion */
       if (file_wrapper->marked_del)
           goto  fail;
     }
@@ -267,15 +267,21 @@ syscall_open (struct intr_frame *f)
        * to system wide file table */
 
       /* Freed when it's last fd closes */
-      file_wrapper = malloc (sizeof(struct syscall_file)); 
+      file_wrapper = calloc (0, sizeof(struct syscall_file)); 
+      if (file_wrapper == NULL) 
+        goto fail;
 
-      /*Set file_wrapper members*/
-      file_wrapper->file_name = file_name;
+      /* Set file_wrapper members */
+      /* Allocate file name on heap */
+      size_t len = strlen(file_name) + 1;
+      file_wrapper->file_name = malloc(len);
+      strlcpy (file_wrapper->file_name, file_name, len);
+
       file_wrapper->count = 0;
       file_wrapper->marked_del = false;
       file_wrapper->file = NULL;
 
-      /*Set file_wrapper's file and add it to system wide file table*/
+      /* Set file_wrapper's file and add it to system wide file table */
       lock_acquire (&syscall_file_lock);
       struct file *file = filesys_open (file_name);
       if (file == NULL)
