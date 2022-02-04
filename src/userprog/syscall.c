@@ -252,8 +252,25 @@ syscall_create (struct intr_frame *f)
 static void 
 syscall_remove (struct intr_frame *f)
 {
-  const char *file_name = (const char* ) syscall_get_arg (f, 1);
-  NOT_REACHED ();
+  const char *file_name = (const char *) syscall_get_arg (f, 1);
+  syscall_validate_user_string(file_name, PGSIZE);
+
+  lock_acquire (&syscall_file_lock);
+  struct syscall_file *file_wrapper = syscall_file_lookup(file_name);
+  bool bRet = false;
+  if (file_wrapper == NULL)
+    {
+      /*File is not opened*/
+      bRet = filesys_remove(file_name);
+    }
+  else
+    {
+      /*File is opened by a process*/
+      file_wrapper->marked_del = true;
+      bRet = true;
+    }
+  lock_release(&syscall_file_lock);
+  f->eax = bRet;
 }
 
 static void 
