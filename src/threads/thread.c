@@ -700,6 +700,8 @@ init_thread (struct thread *t, const char *name, int priority, int mlfqs_nice,
   list_init(&t->locks_held);
 #ifdef USERPROG
   list_init(&t->process_children);
+  list_init(&t->process_fd_table);
+  t->process_fd_next = START_FD;
 #endif
   t->magic = THREAD_MAGIC;
   if (thread_mlfqs) 

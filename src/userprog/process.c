@@ -112,6 +112,48 @@ done: /* Arrives here on success or error. */
   return tid;
 }
 
+int
+process_new_fd(struct thread *t, struct file *file, char* file_name)
+{
+  int id = t->process_fd_next++;
+  struct process_fd *fd = malloc(sizeof(struct process_fd));
+  if (fd == NULL) return -1;
+
+  fd->id = id;
+  list_push_back(&t->process_fd_table, &fd->list_elem);
+  fd->file = file;
+  fd->file_name = file_name;
+  return id;
+}
+
+void
+process_remove_fd(struct thread *t, int id)
+{
+  struct process_fd *fd = process_get_fd(t, id);
+  if (fd == NULL) return;
+  list_remove(&fd->list_elem);
+  free(fd);
+}
+
+struct process_fd *
+process_get_fd(struct thread *t, int id)
+{
+  struct list_elem *e;
+  if (!list_empty(&t->process_fd_table))
+    {
+      e = list_front(&t->process_fd_table);
+      while (e != list_end(&t->process_fd_table))
+        {
+          struct process_fd * fd = list_entry(e, struct process_fd, list_elem);
+          if (fd->id == id)
+            {
+              return fd;
+            }
+        }
+    }
+  return NULL;
+}
+
 /* A thread function that loads a user process and starts it
    running. */
 static void
