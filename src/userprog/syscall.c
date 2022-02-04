@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include <stddef.h>
+#include <hash.h>
+#include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
@@ -12,6 +14,35 @@
 #include "filesys/filesys.h"
 
 struct lock syscall_file_lock;  /*Lock to synchronize filesystem access*/
+
+/* Structs and functions to create a system wide table of open files.*/
+struct hash syscall_file_table; /*System wide table of open files*/
+/* Struct wrapper to put files in syscall_file_table*/
+struct syscall_file
+  {
+    struct hash_elem hash_elem; /* Hash table element. */
+    char* file_name;            /* Key in hash table. */
+    int count;                  /* Number of open instances of file. */
+    struct file* file;          /* File associated with this wrapper. */            
+    bool marked_del;            /* If this file is to be removed. */
+  };
+static unsigned
+syscall_file_hash(const struct hash_elem *p_, void *aux UNUSED)
+  {
+    const struct syscall_file *f = hash_entry(p_, struct syscall_file, hash_elem);
+    return hash_string(f->file_name);
+  }
+
+static bool syscall_file_less(const struct hash_elem *a_,
+                              const struct hash_elem *b_,
+                              void *aux UNUSED)
+  {
+    const struct syscall_file *a = hash_entry (a_, struct syscall_file,
+                                               hash_elem);
+    const struct syscall_file *b = hash_entry (b_, struct syscall_file,
+                                               hash_elem);
+    return strcmp(a->file_name, b->file_name) > 0;
+  }
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
