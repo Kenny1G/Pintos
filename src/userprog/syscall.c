@@ -28,21 +28,32 @@ struct syscall_file
   };
 static unsigned
 syscall_file_hash(const struct hash_elem *p_, void *aux UNUSED)
-  {
-    const struct syscall_file *f = hash_entry(p_, struct syscall_file, hash_elem);
-    return hash_string(f->file_name);
-  }
+{
+  const struct syscall_file *f = hash_entry(p_, struct syscall_file, hash_elem);
+  return hash_string(f->file_name);
+}
 
 static bool syscall_file_less(const struct hash_elem *a_,
                               const struct hash_elem *b_,
                               void *aux UNUSED)
-  {
-    const struct syscall_file *a = hash_entry (a_, struct syscall_file,
-                                               hash_elem);
-    const struct syscall_file *b = hash_entry (b_, struct syscall_file,
-                                               hash_elem);
-    return strcmp(a->file_name, b->file_name) > 0;
-  }
+{
+  const struct syscall_file *a = hash_entry (a_, struct syscall_file, hash_elem);
+  const struct syscall_file *b = hash_entry (b_, struct syscall_file, hash_elem);
+  return strcmp(a->file_name, b->file_name) > 0;
+}
+
+static struct syscall_file *
+syscall_file_lookup (const char *file_name)
+{
+  struct syscall_file f;
+  struct hash_elem *e;
+
+  f.file_name = (char *) file_name;
+  e = hash_find (&syscall_file_table, &f.hash_elem);
+
+  return e != NULL ? hash_entry(e, struct syscall_file, hash_elem) : NULL;
+}
+
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
