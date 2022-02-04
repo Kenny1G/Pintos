@@ -614,12 +614,14 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
       /* Push onto the stack. */
       int size_arg = strlen(token) + 1;
       success = stack_push(esp, token, size_arg);
-      argv[i] = *esp;
 
       /* Search for next token. */
       token = strchr(token, '\0') + 1;
       if (token[0] == ' ')
         token++;
+
+      /* Save the stack location */
+      argv[i] = *esp;
     }
   
   /* Round stack ptr down to a multiple of 4 so you're word aligned. */
@@ -635,9 +637,9 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
   void *argv_0 = *esp;
   success = stack_push(esp, &argv_0, sizeof(void *));
   /* Push argc. */
-  success = stack_push(esp, &(argc), sizeof(int));
+  success = stack_push(esp, &(argc), sizeof(argc));
   /* Push the return address. */
-  success = stack_push(esp, &null_ptr, sizeof(char *));
+  success = stack_push(esp, &null_ptr, sizeof(void *));
   return success;
 }
 
