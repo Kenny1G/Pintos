@@ -88,7 +88,7 @@ process_execute (const char *file_name)
   /* Parse out program name without modifying str */
   size_t len_prog_name = strcspn(p_info->cmd_line, " ");
   p_info->program_name = calloc(sizeof(char), len_prog_name + 1);
-  if (p_info->program_name == NULL) 
+  if (p_info->program_name == NULL)
     {
       tid = TID_ERROR;
       goto done;
@@ -102,13 +102,13 @@ process_execute (const char *file_name)
 done: /* Arrives here on success or error. */
   if (tid == TID_ERROR)
     {
-      if (p_info != NULL) 
-        palloc_free_page (p_info->cmd_line); 
-      free (p_info);
       if (p_child != NULL)
         list_remove (&p_child->elem);
       free (p_child);
     }
+  if (p_info != NULL)
+    palloc_free_page (p_info->cmd_line);
+  free (p_info);
   return tid;
 }
 
@@ -136,13 +136,22 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
+  /* Open the file and prevent writes */
+  struct file* file = filesys_open (p_info->program_name);
+  if (file != NULL) file_deny_write (file);
+
   success = load (p_info, &if_.eip, &if_.esp);
   sema_up (&p_info->loaded);
 
   /* If load failed, quit. */
-  palloc_free_page (p_info->cmd_line); 
   if (!success) 
-    thread_exit ();
+    {
+      if (file != NULL) file_allow_write (file);
+      thread_current ()->process_exit_code = -1;
+      thread_exit ();
+    }
+  else
+    thread_current ()-> exec_file = file;
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -226,6 +235,14 @@ process_exit (void)
       free (curr_child);
     }
   lock_release (&process_child_lock);
+
+  /* Allow writes to the exec file again */
+  if (cur->exec_file != NULL)
+  {
+    file_allow_write (cur->exec_file);
+    file_close (cur->exec_file);
+  }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

@@ -110,6 +110,8 @@ struct thread
     struct process_child *inparent;     /* Record of T in its parent. 
                                            NULL if orphaned. */
     struct list process_children;       /* List of child processes. */
+
+    struct file* exec_file;             /* The file that spawned this process*/
 #endif
     int64_t wake_tick;                  /* Number of ticks left to sleep*/
     struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
