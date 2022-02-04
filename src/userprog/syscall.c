@@ -10,6 +10,7 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #include "devices/shutdown.h"
 #include "filesys/filesys.h"
 
@@ -102,6 +103,7 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
   lock_init (&syscall_file_lock);
+  hash_init (&syscall_file_table, syscall_file_hash, syscall_file_less, NULL);
 }
 
 static void
@@ -249,8 +251,50 @@ syscall_remove (struct intr_frame *f)
 static void 
 syscall_open (struct intr_frame *f)
 {
-  const char *file_name = (const char* ) syscall_get_arg (f, 1);
-  NOT_REACHED ();
+  char *file_name = (char* ) syscall_get_arg (f, 1);
+  syscall_validate_user_string(file_name, PGSIZE);
+  struct syscall_file *file_wrapper = syscall_file_lookup(file_name);
+
+  if (file_wrapper != NULL)
+    {
+      /*Ensure file_name hasn't been marked for deletion*/
+      if (file_wrapper->marked_del)
+          goto  fail;
+    }
+  else
+    {
+      /* file_name is opening for the first time and needs to be added
+       * to system wide file table */
+
+      /* Freed when it's last fd closes */
+      file_wrapper = malloc (sizeof(struct syscall_file)); 
+
+      /*Set file_wrapper members*/
+      file_wrapper->file_name = file_name;
+      file_wrapper->count = 0;
+      file_wrapper->marked_del = false;
+      file_wrapper->file = NULL;
+
+      /*Set file_wrapper's file and add it to system wide file table*/
+      lock_acquire (&syscall_file_lock);
+      struct file *file = filesys_open (file_name);
+      if (file == NULL)
+        {
+          free(file_wrapper);
+          lock_release (&syscall_file_lock);
+          goto  fail;
+        }
+      file_wrapper->file = file;
+      hash_insert (&syscall_file_table, &file_wrapper->hash_elem);
+      lock_release (&syscall_file_lock);
+    }
+
+  file_wrapper->count++;
+  f->eax = process_new_fd(thread_current(), file_wrapper->file, file_name);
+  return;
+fail:
+  f->eax = -1;
+  return;
 }
 
 static void 
