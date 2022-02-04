@@ -12,7 +12,9 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 #include "filesys/filesys.h"
+#include "filesys/file.h"
 
 struct lock syscall_file_lock;  /*Lock to synchronize filesystem access*/
 
@@ -209,7 +211,6 @@ static void
 syscall_halt (struct intr_frame *f)
 {
   shutdown_power_off ();
-  NOT_REACHED ();
 }
 
 static void 
@@ -315,16 +316,53 @@ static void
 syscall_filesize (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  NOT_REACHED ();
+  
+  struct process_fd *process_fd = process_get_fd (thread_current (), fd);
+  if (process_fd == NULL)
+    {
+      f->eax = -1;
+      return;
+    }
+
+  lock_acquire(&syscall_file_lock);
+  f->eax = file_length(process_fd->file);
+  lock_release(&syscall_file_lock);
 }
 
 static void 
 syscall_read (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  void *buffer = (void *) syscall_get_arg (f, 2);
+  char *buffer = (char *) syscall_get_arg (f, 2);
   uint32_t size = syscall_get_arg (f, 3);
-  NOT_REACHED ();
+  /* Verify that the entire buffer is valid user memory. */
+  syscall_validate_user_memory (buffer, size);
+  
+  if (fd == 0)
+    {
+      /* Read from stdin */
+      size_t bytes_read = 0;
+      while (bytes_read < size) 
+        {
+          buffer[bytes_read] = input_getc ();
+          bytes_read++;
+        }
+      f->eax = bytes_read;
+    }
+  else 
+    {
+      /* Read for files */
+      struct process_fd *process_fd = process_get_fd (thread_current (), fd);
+      if (process_fd == NULL)
+        {
+          f->eax = -1;
+          return;
+        }
+      
+      lock_acquire(&syscall_file_lock);
+      f->eax = file_read(process_fd->file, buffer, size);
+      lock_release(&syscall_file_lock);
+    }
 }
 
 static void 
@@ -332,33 +370,70 @@ syscall_write (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
   const char *buffer = (const char* ) syscall_get_arg (f, 2);
-  uint32_t stride, size = syscall_get_arg (f, 3);
+  size_t stride, size = syscall_get_arg (f, 3);
   /* Verify that the entire buffer is valid user memory. */
-  syscall_validate_user_memory (buffer, size);
-  /* For FD==1, print to the console strides of the buffer. */
-  while (fd == 1 && size > 0)
+  syscall_validate_user_string (buffer, size);
+ 
+  if (fd == 1)
     {
-      size -= stride = size > 256 ? 256 : size;
-      putbuf(buffer, stride);
+       /* For FD==1, print to the console strides of the buffer. */
+      while (size > 0)
+        {
+          size -= stride = size > 256 ? 256 : size;
+          putbuf(buffer, stride);
 
-      buffer += stride;
+          buffer += stride;
+        }
     }
-  /* TODO - implement write for regular files. */
+  else 
+    {
+      /* Write for files */
+      struct process_fd *process_fd = process_get_fd (thread_current (), fd);
+      if (process_fd == NULL)
+        {
+          f->eax = -1;
+          return;
+        }
+      
+      lock_acquire(&syscall_file_lock);
+      f->eax = file_write(process_fd->file, buffer, size);
+      lock_release(&syscall_file_lock);
+    }
 }
 
 static void 
 syscall_seek (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  uint32_t position = syscall_get_arg (f, 2);
-  NOT_REACHED ();
+  off_t position = *(off_t*)syscall_get_arg (f, 2);
+  
+  struct process_fd *process_fd = process_get_fd (thread_current (), fd);
+  if (process_fd == NULL)
+    {
+      f->eax = -1;
+      return;
+    }
+
+  lock_acquire(&syscall_file_lock);
+  file_seek(process_fd->file, position);
+  lock_release(&syscall_file_lock);
 }
 
 static void 
 syscall_tell (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  NOT_REACHED ();
+  
+  struct process_fd *process_fd = process_get_fd (thread_current (), fd);
+  if (process_fd == NULL)
+    {
+      f->eax = -1;
+      return;
+    }
+  
+  lock_acquire(&syscall_file_lock);
+  f->eax = file_tell(process_fd->file);
+  lock_release(&syscall_file_lock);
 }
 
 static void 
