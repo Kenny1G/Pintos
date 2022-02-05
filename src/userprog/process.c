@@ -34,7 +34,8 @@ struct process_info {
   char *program_name;       /* Pointer to the program name (first arg). */
   struct semaphore loaded;  /* Prevents the thread from running until process
                                info is loaded in the stack */
-  struct process_child *inparent; /* Pointer to record of current process in parent. */
+  struct process_child *inparent;
+                          /* Pointer to record of current process in parent. */
 };
 
 static thread_func start_process NO_RETURN;

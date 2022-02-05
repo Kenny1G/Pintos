@@ -26,7 +26,7 @@ typedef int tid_t;
 #define PRI_MAX 63                      /* Highest priority. */
 #define MAX_PRIORITY_DONATION_NESTED_DEPTH 8    /* For recursive donations. */
 
-#define START_FD 2 /*First fd a process can use*/
+#define START_FD 2                      /*First fd a process can use*/
 
 /* A kernel thread or user process.
 
@@ -108,11 +108,13 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     char *process_fn;                   /* Filename in process_execute. */
     int32_t process_exit_code;          /* Exit code for process_exit. */
+    
     /* Guarded by process.c/process_child_lock. */
     struct process_child *inparent;     /* Record of T in its parent.
                                            NULL if orphaned. */
     struct list process_children;       /* List of child processes. */
 
+    /* File system */
     struct file* exec_file;             /* The file that spawned this process*/
 
     struct list process_fd_table;       /* List of this process' file 
