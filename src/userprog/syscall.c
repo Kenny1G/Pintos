@@ -481,17 +481,17 @@ void syscall_close_helper (int fd)
 
   file_close (process_fd->file);
 
-  /* Update process' file descriptor table */
-  file_wrapper->count--;
-  if (file_wrapper->count == 0)
+  /* Update system wide file table */
+  if (--file_wrapper->count == 0)
     {
       if (file_wrapper->marked_del) 
         filesys_remove(process_fd->file_name);
       syscall_file_remove (process_fd->file_name);
-      free(file_wrapper->file_name);
+      if (file_wrapper->file_name) free(file_wrapper->file_name);
       free(file_wrapper);
     }
 
+  /* Update process' file descriptor table */
   process_remove_fd (thread_current(), fd);
 
   lock_release(&syscall_file_lock);
