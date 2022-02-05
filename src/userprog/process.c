@@ -36,6 +36,7 @@ struct process_info {
                                info is loaded in the stack */
   struct process_child *inparent;
                           /* Pointer to record of current process in parent. */
+  bool load_success;
 };
 
 static thread_func start_process NO_RETURN;
@@ -102,6 +103,8 @@ process_execute (const char *file_name)
   sema_down (&p_info->loaded);
 
 done: /* Arrives here on success or error. */
+  if (p_info->load_success == false)
+    tid = TID_ERROR;
   if (tid == TID_ERROR)
     {
       if (p_child != NULL)
@@ -172,7 +175,7 @@ start_process (void *file_name_)
   struct process_info *p_info = (struct process_info *) file_name_;
   struct thread *cur = thread_current ();
   struct intr_frame if_;
-  bool success;
+  bool success = false;
 
   /* Set up received member values. */
   cur->process_fn = p_info->program_name;
@@ -257,17 +260,17 @@ process_exit (void)
   struct process_child *curr_child;
   uint32_t *pd;
 
-  if (cur->process_fn != NULL)
-    {
-      printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
-      free (cur->process_fn);
-    }
   lock_acquire (&process_child_lock);
   /* Update the parent (if exists) that this child has exited. */
   if (cur->inparent != NULL)
     {
       cur->inparent->exit_code = cur->process_exit_code;
       sema_up (&cur->inparent->exited);
+    }
+  if (cur->process_fn != NULL)
+    {
+      printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
+      free (cur->process_fn);
     }
   /* Orphan all child processes. */
   for (curr_child_elem = list_begin (&cur->process_children); 
@@ -519,6 +522,7 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
 // MAY NEED modification
  done:
   /* We arrive here whether the load is successful or not. */
+  p_info->load_success = success;
   file_close (file);
   return success;
 }
