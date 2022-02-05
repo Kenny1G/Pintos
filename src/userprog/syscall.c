@@ -165,7 +165,6 @@ syscall_validate_user_memory (const void *uaddr, size_t size)
   const void *current_page;
 
   ASSERT (thread_current ()->pagedir != NULL);
-  ASSERT (size > 0);
 
   if (uaddr == NULL)
       syscall_terminate_process ();
@@ -192,7 +191,6 @@ syscall_validate_user_string (const char *uaddr, size_t max_size)
   const char *caddr = uaddr;
 
   ASSERT (thread_current ()->pagedir != NULL);
-  ASSERT (max_size > 0);
 
   for (; caddr != uaddr + max_size + 1; ++caddr)
     {
