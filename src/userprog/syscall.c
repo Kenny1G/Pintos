@@ -465,7 +465,13 @@ static void
 syscall_close (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
+  syscall_close_helper (fd);
+}
 
+/* Helper function to close files so other files can update the system wide
+ * file descriptor table. */
+void syscall_close_helper (int fd)
+{
   struct process_fd *process_fd = process_get_fd (thread_current (), fd); 
   if (process_fd == NULL) 
     return;
@@ -479,12 +485,16 @@ syscall_close (struct intr_frame *f)
   file_wrapper->count--;
   if (file_wrapper->count == 0)
     {
-      if (file_wrapper->marked_del)
+      if (file_wrapper->marked_del) 
         filesys_remove(process_fd->file_name);
-      syscall_file_remove (process_fd->file_name);
+      struct hash_elem *e = syscall_file_remove (process_fd->file_name);
+      struct syscall_file *f = hash_entry(e, struct syscall_file, hash_elem);
+      free(f->file_name);
+      free(f);
     }
 
   process_remove_fd (thread_current(), fd);
 
   lock_release(&syscall_file_lock);
+  return;
 }
