@@ -21,6 +21,7 @@ struct process_fd *process_get_fd(struct thread *t, int id);
    of a parent thread. */
 struct process_child 
   {
+    tid_t tid;
     struct thread *thread;
     struct list_elem elem;
     int32_t exit_code;
