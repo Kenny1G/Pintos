@@ -430,7 +430,7 @@ static void
 syscall_seek (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  off_t position = *(off_t*)syscall_get_arg (f, 2);
+  unsigned position = syscall_get_arg (f, 2);
   
   struct process_fd *process_fd = process_get_fd (thread_current (), fd);
   if (process_fd == NULL)
