@@ -57,12 +57,21 @@ syscall_file_lookup (const char *file_name)
   return e != NULL ? hash_entry(e, struct syscall_file, hash_elem) : NULL;
 }
 
-static void 
-syscall_file_hash_delete (struct syscall_file *f)
+/* This function Removes key FILE_NAME from syscall_file_table and 
+ * returns removed element.
+ * returns NULL if file_name was not found in syscall_file_table. */
+static struct hash_elem *
+syscall_file_remove (const char *file_name)
 {
-  hash_delete(&syscall_file_table, &f->hash_elem);
-  if (f->file_name != NULL) free (f->file_name);
-  free (f);
+  struct syscall_file f;
+  struct hash_elem *e;
+
+  f.file_name = (char *) file_name;
+  e = hash_find (&syscall_file_table, &f.hash_elem);
+  if (e == NULL)
+    return NULL;
+
+  return hash_delete (&syscall_file_table, &f.hash_elem);
 }
 
 
@@ -253,8 +262,25 @@ syscall_create (struct intr_frame *f)
 static void 
 syscall_remove (struct intr_frame *f)
 {
-  const char *file_name = (const char* ) syscall_get_arg (f, 1);
-  NOT_REACHED ();
+  const char *file_name = (const char *) syscall_get_arg (f, 1);
+  syscall_validate_user_string(file_name, PGSIZE);
+
+  lock_acquire (&syscall_file_lock);
+  struct syscall_file *file_wrapper = syscall_file_lookup(file_name);
+  bool bRet = false;
+  if (file_wrapper == NULL)
+    {
+      /*File is not opened*/
+      bRet = filesys_remove(file_name);
+    }
+  else
+    {
+      /*File is opened by a process*/
+      file_wrapper->marked_del = true;
+      bRet = true;
+    }
+  lock_release(&syscall_file_lock);
+  f->eax = bRet;
 }
 
 static void 
@@ -276,7 +302,7 @@ syscall_open (struct intr_frame *f)
        * to system wide file table */
 
       /* Freed when it's last fd closes */
-      file_wrapper = calloc (0, sizeof(struct syscall_file)); 
+      file_wrapper = calloc (1, sizeof(struct syscall_file)); 
       if (file_wrapper == NULL) 
         goto fail;
 
@@ -292,7 +318,7 @@ syscall_open (struct intr_frame *f)
 
       /* Set file_wrapper's file and add it to system wide file table */
       lock_acquire (&syscall_file_lock);
-      struct file *file = filesys_open (file_name);
+      struct file *file = filesys_open (file_wrapper->file_name);
       if (file == NULL)
         {
           free(file_wrapper);
@@ -305,7 +331,8 @@ syscall_open (struct intr_frame *f)
     }
 
   file_wrapper->count++;
-  f->eax = process_new_fd(thread_current(), file_wrapper->file, file_name);
+  f->eax = process_new_fd (thread_current(), file_wrapper->file,
+                           file_wrapper->file_name);
   return;
 fail:
   f->eax = -1;
@@ -441,22 +468,22 @@ syscall_close (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
 
-  struct process_fd *process_fd = process_get_fd (thread_current (), fd);
-      if (process_fd == NULL)
-        return;
+  struct process_fd *process_fd = process_get_fd (thread_current (), fd); 
+  if (process_fd == NULL) 
+    return;
   
-  struct syscall_file *file_wrapper = syscall_file_lookup(fd);
-
   lock_acquire(&syscall_file_lock);
+  struct syscall_file *file_wrapper = syscall_file_lookup (process_fd->file_name);
+
   file_close (process_fd->file);
 
-  /* Modify file_wrapper's */
+  /* Update process' file descriptor table */
   file_wrapper->count--;
   if (file_wrapper->count == 0)
     {
       if (file_wrapper->marked_del)
         filesys_remove(process_fd->file_name);
-      syscall_file_hash_delete(file_wrapper);
+      syscall_file_remove (process_fd->file_name);
     }
 
   process_remove_fd (thread_current(), fd);
