@@ -479,11 +479,11 @@ void syscall_close_helper (int fd)
   lock_acquire(&syscall_file_lock);
   struct syscall_file *file_wrapper = syscall_file_lookup (process_fd->file_name);
 
-  file_close (process_fd->file);
 
   /* Update system wide file table */
   if (--file_wrapper->count == 0)
     {
+      file_close (process_fd->file);
       if (file_wrapper->marked_del) 
         filesys_remove(process_fd->file_name);
       syscall_file_remove (process_fd->file_name);

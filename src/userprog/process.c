@@ -19,6 +19,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#include "syscall.h"
 
 /* Processes acquire this lock when modifying their parent or children
  to prevent race conditions when multiple processes exit at the same time. */
@@ -285,6 +286,19 @@ process_exit (void)
     file_allow_write (cur->exec_file);
     file_close (cur->exec_file);
   }
+
+  /* Close open file descriptors */
+  struct list* fd_table = &thread_current()->process_fd_table;
+  struct process_fd *fd;
+  size_t n = list_size (fd_table);
+  struct list_elem *e = list_begin (fd_table);
+  for (size_t i = 0; i < n; ++i) 
+    {
+      fd = list_entry (e, struct process_fd, list_elem);
+      e = list_next (e);
+      syscall_close_helper (fd->id); 
+    }
+
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
