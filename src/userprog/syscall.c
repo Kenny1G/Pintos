@@ -494,7 +494,11 @@ void syscall_close_helper (int fd)
   
   lock_acquire(&syscall_file_lock);
   struct syscall_file *file_wrapper = syscall_file_lookup (process_fd->file_name);
-
+  if (file_wrapper == NULL)
+  {
+    lock_release(&syscall_file_lock);
+    return;
+  }
 
   /* Update system wide file table */
   if (--file_wrapper->count == 0)
@@ -503,7 +507,8 @@ void syscall_close_helper (int fd)
       if (file_wrapper->marked_del) 
         filesys_remove(process_fd->file_name);
       syscall_file_remove (process_fd->file_name);
-      if (file_wrapper->file_name) free(file_wrapper->file_name);
+      if (file_wrapper->file_name)
+        free(file_wrapper->file_name);
       free(file_wrapper);
     }
 
