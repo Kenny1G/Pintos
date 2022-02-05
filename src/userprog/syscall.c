@@ -99,6 +99,7 @@ static void syscall_write (struct intr_frame *);
 static void syscall_seek (struct intr_frame *);
 static void syscall_tell (struct intr_frame *);
 static void syscall_close (struct intr_frame *);
+static void syscall_curmem (struct intr_frame *);
 
 /* Initialize syscalls by registering dispatch functions for supported
    syscall numbers and then registering the syscall interrupt handler. */
@@ -118,11 +119,20 @@ syscall_init (void)
   syscall_handlers[SYS_SEEK] = syscall_seek;
   syscall_handlers[SYS_TELL] = syscall_tell;
   syscall_handlers[SYS_CLOSE] = syscall_close;
+  syscall_handlers[SYS_CURMEM] = syscall_curmem;
   barrier ();  /* Write all handlers before starting syscalls. */ 
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
   lock_init (&syscall_file_lock);
   hash_init (&syscall_file_table, syscall_file_hash, syscall_file_less, NULL);
+}
+
+static void
+syscall_curmem (struct intr_frame *f)
+{
+  void *m = malloc (1);
+  free (m);
+  f->eax = (unsigned) m;
 }
 
 static void
