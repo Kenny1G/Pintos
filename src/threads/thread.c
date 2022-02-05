@@ -698,7 +698,11 @@ init_thread (struct thread *t, const char *name, int priority, int mlfqs_nice,
   t->mlfqs_nice = mlfqs_nice;
   t->mlfqs_recent_cpu = mlfqs_recent_cpu;
   list_init(&t->locks_held);
+#ifdef USERPROG
   list_init(&t->process_children);
+  list_init(&t->process_fd_table);
+  t->process_fd_next = START_FD;
+#endif
   t->magic = THREAD_MAGIC;
   if (thread_mlfqs) 
     thread_mlfqs_update_priority (t, NULL);

@@ -19,6 +19,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#include "syscall.h"
 
 /* Processes acquire this lock when modifying their parent or children
  to prevent race conditions when multiple processes exit at the same time. */
@@ -33,7 +34,9 @@ struct process_info {
   char *program_name;       /* Pointer to the program name (first arg). */
   struct semaphore loaded;  /* Prevents the thread from running until process
                                info is loaded in the stack */
-  struct process_child *inparent; /* Pointer to record of current process in parent. */
+  struct process_child *inparent;
+                          /* Pointer to record of current process in parent. */
+  bool load_success;
 };
 
 static thread_func start_process NO_RETURN;
@@ -88,7 +91,7 @@ process_execute (const char *file_name)
   /* Parse out program name without modifying str */
   size_t len_prog_name = strcspn(p_info->cmd_line, " ");
   p_info->program_name = calloc(sizeof(char), len_prog_name + 1);
-  if (p_info->program_name == NULL) 
+  if (p_info->program_name == NULL)
     {
       tid = TID_ERROR;
       goto done;
@@ -96,20 +99,73 @@ process_execute (const char *file_name)
   memcpy(p_info->program_name, p_info->cmd_line, len_prog_name);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (p_info->program_name, PRI_DEFAULT, start_process, p_info);
+  tid = thread_create (p_info->program_name, PRI_DEFAULT, start_process,
+                       p_info);
   sema_down (&p_info->loaded);
 
 done: /* Arrives here on success or error. */
+  if (p_info->load_success == false)
+    tid = TID_ERROR;
   if (tid == TID_ERROR)
     {
-      if (p_info != NULL) 
-        palloc_free_page (p_info->cmd_line); 
-      free (p_info);
       if (p_child != NULL)
         list_remove (&p_child->elem);
       free (p_child);
     }
+  if (p_info != NULL)
+    palloc_free_page (p_info->cmd_line);
+  free (p_info);
   return tid;
+}
+
+static bool
+process_elem_tid_equal (struct list_elem *elem, void *aux)
+{
+  struct process_child *child = list_entry (elem, struct process_child, elem);
+  return child->thread != NULL && child->thread->tid == *(tid_t *)aux;
+}
+
+static bool
+process_elem_fd_equal (struct list_elem *elem, void *aux)
+{
+  struct process_fd * fd = list_entry(elem, struct process_fd, list_elem);
+  return fd->id == *(int *)aux;
+}
+
+struct process_fd *
+process_get_fd(struct thread *t, int id)
+{
+  struct list_elem *e;
+  if (!list_empty(&t->process_fd_table))
+    {
+      e = list_find(&t->process_fd_table, process_elem_fd_equal,
+                    &id);
+      return list_entry(e, struct process_fd, list_elem);
+    }
+  return NULL;
+}
+
+int
+process_new_fd(struct thread *t, struct file *file, char* file_name)
+{
+  int id = t->process_fd_next++;
+  struct process_fd *fd = malloc(sizeof(struct process_fd));
+  if (fd == NULL) return -1;
+
+  fd->id = id;
+  list_push_back(&t->process_fd_table, &fd->list_elem);
+  fd->file = file;
+  fd->file_name = file_name;
+  return id;
+}
+
+void
+process_remove_fd(struct thread *t, int id)
+{
+  struct process_fd *fd = process_get_fd(t, id);
+  if (fd == NULL) return;
+  list_remove(&fd->list_elem);
+  free(fd);
 }
 
 /* A thread function that loads a user process and starts it
@@ -120,7 +176,7 @@ start_process (void *file_name_)
   struct process_info *p_info = (struct process_info *) file_name_;
   struct thread *cur = thread_current ();
   struct intr_frame if_;
-  bool success;
+  bool success = false;
 
   /* Set up received member values. */
   cur->process_fn = p_info->program_name;
@@ -136,13 +192,22 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
+  /* Open the file and prevent writes */
+  struct file* file = filesys_open (p_info->program_name);
+  if (file != NULL) file_deny_write (file);
+
   success = load (p_info, &if_.eip, &if_.esp);
   sema_up (&p_info->loaded);
 
   /* If load failed, quit. */
-  palloc_free_page (p_info->cmd_line); 
   if (!success) 
-    thread_exit ();
+    {
+      if (file != NULL) file_allow_write (file);
+      thread_current ()->process_exit_code = -1;
+      thread_exit ();
+    }
+  else
+    thread_current ()-> exec_file = file;
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -152,13 +217,6 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
-}
-
-static bool
-process_elem_tid_equal (struct list_elem *elem, void *aux)
-{
-  struct process_child *child = list_entry (elem, struct process_child, elem);
-  return child->thread != NULL && child->thread->tid == *(tid_t *)aux;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -203,11 +261,6 @@ process_exit (void)
   struct process_child *curr_child;
   uint32_t *pd;
 
-  if (cur->process_fn != NULL)
-    {
-      printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
-      free (cur->process_fn);
-    }
   lock_acquire (&process_child_lock);
   /* Update the parent (if exists) that this child has exited. */
   if (cur->inparent != NULL)
@@ -215,6 +268,11 @@ process_exit (void)
       cur->inparent->exit_code = cur->process_exit_code;
       cur->inparent->thread = NULL;
       sema_up (&cur->inparent->exited);
+    }
+  if (cur->process_fn != NULL)
+    {
+      printf ("%s: exit(%d)\n", cur->process_fn, cur->process_exit_code);
+      free (cur->process_fn);
     }
   /* Orphan all child processes. */
   for (curr_child_elem = list_begin (&cur->process_children); 
@@ -227,6 +285,27 @@ process_exit (void)
       free (curr_child);
     }
   lock_release (&process_child_lock);
+
+  /* Allow writes to the exec file again */
+  if (cur->exec_file != NULL)
+  {
+    file_allow_write (cur->exec_file);
+    file_close (cur->exec_file);
+  }
+
+  /* Close open file descriptors */
+  struct list* fd_table = &thread_current()->process_fd_table;
+  struct process_fd *fd;
+  size_t n = list_size (fd_table);
+  struct list_elem *e = list_begin (fd_table);
+  for (size_t i = 0; i < n; ++i) 
+    {
+      fd = list_entry (e, struct process_fd, list_elem);
+      e = list_next (e);
+      syscall_close_helper (fd->id); 
+    }
+
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -445,6 +524,7 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
 // MAY NEED modification
  done:
   /* We arrive here whether the load is successful or not. */
+  p_info->load_success = success;
   file_close (file);
   return success;
 }
@@ -615,12 +695,14 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
       /* Push onto the stack. */
       int size_arg = strlen(token) + 1;
       success = stack_push(esp, token, size_arg);
-      argv[i] = *esp;
 
       /* Search for next token. */
       token = strchr(token, '\0') + 1;
       if (token[0] == ' ')
         token++;
+
+      /* Save the stack location */
+      argv[i] = *esp;
     }
   
   /* Round stack ptr down to a multiple of 4 so you're word aligned. */
@@ -636,9 +718,9 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
   void *argv_0 = *esp;
   success = stack_push(esp, &argv_0, sizeof(void *));
   /* Push argc. */
-  success = stack_push(esp, &(argc), sizeof(int));
+  success = stack_push(esp, &(argc), sizeof(argc));
   /* Push the return address. */
-  success = stack_push(esp, &null_ptr, sizeof(char *));
+  success = stack_push(esp, &null_ptr, sizeof(void *));
   return success;
 }
 

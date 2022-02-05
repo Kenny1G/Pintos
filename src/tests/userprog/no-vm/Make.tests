@@ -1,8 +1,14 @@
 # -*- makefile -*-
 
-tests/userprog/no-vm_TESTS = tests/userprog/no-vm/multi-oom
+tests/userprog/no-vm_TESTS = $(addprefix tests/userprog/no-vm/,multi-oom    \
+leak-hunt)
+
 tests/userprog/no-vm_PROGS = $(tests/userprog/no-vm_TESTS)
-tests/userprog/no-vm/multi-oom_SRC = tests/userprog/no-vm/multi-oom.c	\
+tests/userprog/no-vm/multi-oom_SRC = tests/userprog/no-vm/multi-oom.c        \
 tests/lib.c
 
+tests/userprog/no-vm/leak-hunt_SRC = tests/userprog/no-vm/leak-hunt.c        \
+tests/main.c tests/lib.c
+
 tests/userprog/no-vm/multi-oom.output: TIMEOUT = 360
+tests/userprog/no-vm/leak-hunt.output: TIMEOUT = 360
