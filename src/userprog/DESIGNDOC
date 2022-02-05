@@ -323,19 +323,19 @@ individually, there's no room for further improvement on this end.
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
 
-We use the `struct process_child` to keep track of the status of child processes.
-When `wait` is called. We first find the child in `thread->process_children`
-corresponding to the TID passed protected by the `process_child_lock` lock.
-If it's found, we down the `exited` semaphore in `process_child` which is only up'd
-after the child process terminates.
+We use the `struct process_child` to keep track of the status of 
+child processes. When `wait` is called. We first find the child in
+`thread->process_children` corresponding to the TID passed protected by the
+`process_child_lock` lock. If it's found, we down the `exited` semaphore in
+`process_child` which is only up'd after the child process terminates.
 Finally, we remove the child from the children list and return its `exit_code`
 from `process_child` before freeing the memory of the `process_child` struct.
-On the other hand, when a process exits, it acquires the `process_child_lock` and up's
-its `process_child` `exited` semaphore. It also updates the `process_child` exit_code
-and `thread` appropriately.
-Finally, it updates the `inparent` member of all its children processes to point to NULL
-and frees their `process_child` memory. These orphaned child processes don't need to update
-their parent when they exit in the future.
+On the other hand, when a process exits, it acquires the `process_child_lock`
+and up's its `process_child` `exited` semaphore. It also updates the
+`process_child` exit_code and `thread` appropriately. Finally, it updates the
+`inparent` member of all its children processes to point to NULL and frees
+their `process_child` memory. These orphaned child processes don't need to
+update their parent when they exit in the future.
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -350,16 +350,18 @@ their parent when they exit in the future.
 >> allocated resources (locks, buffers, etc.) are freed?  In a few
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
+
 Decomposition helps with this problem. Our approach is to define `syscall_validate_user_memory`
-which is called on every memory block we try to access on the user memory. This function
-is designed to never return if called on invalid memory. If that happens, it calls
-`syscall_terminate_process` which frees all process resources and exits it.
-For example, when `syscall_write` is called. `syscall_get_arg` calls `syscall_validate_user_memory`
-on the corresponding address on the user stack. Then `syscall_validate_user_memory` is called
-on the provided buffer address by the user for the provided size. If any of these validations
-fails, `syscall_terminate_process` is called which then frees all dynamic memory (e.g. process
-filename, process children, etc.). If any new features are added that require freeing memory on
-termination, they should be added to this function.
+which is called on every memory block we try to access on the user memory. This
+function is designed to never return if called on invalid memory. If that
+happens, it calls `syscall_terminate_process` which frees all process resources
+and exits it. For example, when `syscall_write` is called. `syscall_get_arg`
+calls `syscall_validate_user_memory` on the corresponding address on the user
+stack. Then `syscall_validate_user_memory` is called on the provided buffer
+address by the user for the provided size. If any of these validations fails,
+`syscall_terminate_process` is called which then frees all dynamic memory (e.g.
+process filename, process children, etc.). If any new features are added that
+require freeing memory on termination, they should be added to this function.
 
 ---- SYNCHRONIZATION ----
 
