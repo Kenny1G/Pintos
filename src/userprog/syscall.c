@@ -487,10 +487,9 @@ void syscall_close_helper (int fd)
     {
       if (file_wrapper->marked_del) 
         filesys_remove(process_fd->file_name);
-      struct hash_elem *e = syscall_file_remove (process_fd->file_name);
-      struct syscall_file *f = hash_entry(e, struct syscall_file, hash_elem);
-      free(f->file_name);
-      free(f);
+      syscall_file_remove (process_fd->file_name);
+      free(file_wrapper->file_name);
+      free(file_wrapper);
     }
 
   process_remove_fd (thread_current(), fd);
