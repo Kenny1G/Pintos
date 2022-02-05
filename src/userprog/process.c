@@ -525,7 +525,7 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   p_info->load_success = success;
-  file_close (file);
+  if (file != NULL) file_close (file);
   return success;
 }
 
