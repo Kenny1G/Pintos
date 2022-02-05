@@ -99,7 +99,8 @@ process_execute (const char *file_name)
   memcpy(p_info->program_name, p_info->cmd_line, len_prog_name);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (p_info->program_name, PRI_DEFAULT, start_process, p_info);
+  tid = thread_create (p_info->program_name, PRI_DEFAULT, start_process,
+                       p_info);
   sema_down (&p_info->loaded);
 
 done: /* Arrives here on success or error. */

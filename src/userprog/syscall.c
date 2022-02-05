@@ -308,6 +308,11 @@ syscall_open (struct intr_frame *f)
       /* Allocate file name on heap */
       size_t len = strlen(file_name) + 1;
       file_wrapper->file_name = malloc(len);
+      if (file_wrapper->file_name == NULL)
+        {
+          free(file_wrapper);
+          goto fail;
+        }
       strlcpy (file_wrapper->file_name, file_name, len);
 
       file_wrapper->count = 0;
@@ -319,6 +324,7 @@ syscall_open (struct intr_frame *f)
       struct file *file = filesys_open (file_wrapper->file_name);
       if (file == NULL)
         {
+          free(file_wrapper->file_name);
           free(file_wrapper);
           lock_release (&syscall_file_lock);
           goto  fail;
