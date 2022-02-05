@@ -30,7 +30,7 @@ Akram Sbaih        <akram@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-Used to pass info concerning the process' name and arguments from 
+Used to pass info concerning the process' name and arguments from
 process_execute() to load(), where the stack is intitiated.
 
 struct process_info {
@@ -46,26 +46,26 @@ struct process_info {
 >> you arrange for the elements of argv[] to be in the right order?
 >> How do you avoid overflowing the stack page?
 
-process_execute() uses thread_create() to call start_process() which calls 
-load(). The stack of the thread is set up in load(), so we have to make sure 
+process_execute() uses thread_create() to call start_process() which calls
+load(). The stack of the thread is set up in load(), so we have to make sure
 the stack is created and the args are put into the stack before the thread
 starts to run. Therefore, we chose to used a sempahore that would block the
 thread until it had been fully loaded, and then we could up it so that it could
-run. We needed to be able to pass information from 
-process_execute() to thread_create() and something that could hold the
-aforementioned needed semaphore, so we created the process_info struct.
+run. We needed to be able to pass information from process_execute() to
+thread_create() and something that could hold the aforementioned needed
+semaphore, so we created the process_info struct.
 
 We parsed the arguments and passed them into the stack after the stack was
-created in the load() function. We arrange for elements of argv[] to be in the 
+created in the load() function. We arrange for elements of argv[] to be in the
 right order using the following steps:
  - pushing filename and arg strings onto the stack in order
- - word aligning to 4 bytes 
- - starting w nullptr, pushing the references to the args on the stack in 
+ - word aligning to 4 bytes
+ - starting w nullptr, pushing the references to the args on the stack in
    reverse order
  - then push argv, argc, and return address onto the stack
 
-We avoid overflowing stack page by allocating our process_info stuct on the 
-heap. We only allocate a page for the purposes of this project, so have to 
+We avoid overflowing stack page by allocating our process_info stuct on the
+heap. We only allocate a page for the purposes of this project, so have to
 limit the file name and args to PGSIZE. However, since we're adding more than
 just the file name and args, (we're also adding their references, argc, etc.)
 we make sure to not overflow the stack by making sure we're within the
@@ -75,22 +75,38 @@ boundaries of the thread's stack whenever we write to it.
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
-According to the man page, strtok_r() is a reentrant version of strtok(). 
-strtok() uses a static buffer while parsing to keep track of the point from 
-which to start searching for the next token. However, strtok_r() has an extra 
-argument, saveptr, which is used internally to maintain context between 
+According to the man page, strtok_r() is a reentrant version of strtok().
+strtok() uses a static buffer while parsing to keep track of the point from
+which to start searching for the next token. However, strtok_r() has an extra
+argument, saveptr, which is used internally to maintain context between
 succecessive calls that parse the same string. Because strtok_r() maintains
 state between calls internally through the extra argument rather than with a
-global static variable, strtok_r() is MT-safe, which means it is safe to call 
-in the presence of other threads, whereas strtok() is MT-Unsafe, so it invokes 
-undefined behavior if a context switch happens while strtok() is called and 
-another thread calls strtok(). However, strtok_r() should not be called by 
+global static variable, strtok_r() is MT-safe, which means it is safe to call
+in the presence of other threads, whereas strtok() is MT-Unsafe, so it invokes
+undefined behavior if a context switch happens while strtok() is called and
+another thread calls strtok(). However, strtok_r() should not be called by
 mutiple threads on the same string because strtok_r() modifies the string.
  
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
 
+<<<<<<< Updated upstream
+=======
+The UNIX approach scopes arguemnt handling more appropriately, handling
+parsing in the shell keeps all argument parsing client-side. This isolation
+helps prevents introducing additional complexity and bugs in the kernel. It
+shoudln't be the kerenel's job to parse arguments since there is no reason it
+can't be done on the user side. Also if the argument parsing results in a
+crash, it's better to crash the shell than the kernel.
+
+The Pintos approach is also just a more naive implementation. Since Pintos
+just parses the command lines as tokens separated by white space, it cannot
+handle additional complexity within arguments, such as differentiating between
+an argument starting with '-' vs one starting with '--'. However, the UNIX
+shell can easily handle parsing more complicated argument structures.
+
+>>>>>>> Stashed changes
                  SYSTEM CALLS
                  ============
 
@@ -100,6 +116,14 @@ mutiple threads on the same string because strtok_r() modifies the string.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+<<<<<<< Updated upstream
+=======
+FOR DENY WRITES:
+To allow us to properly deny writes, we added a file pointer to the executable
+file that spawened the process to the thread struct.
+ `struct file* exec_file;             /* The file that spawned this process*/`
+
+>>>>>>> Stashed changes
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?

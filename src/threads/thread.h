@@ -109,13 +109,14 @@ struct thread
     char *process_fn;                   /* Filename in process_execute. */
     int32_t process_exit_code;          /* Exit code for process_exit. */
     /* Guarded by process.c/process_child_lock. */
-    struct process_child *inparent;     /* Record of T in its parent. 
+    struct process_child *inparent;     /* Record of T in its parent.
                                            NULL if orphaned. */
     struct list process_children;       /* List of child processes. */
 
     struct file* exec_file;             /* The file that spawned this process*/
 
-    struct list process_fd_table;       /* List of this process' file descriptors*/
+    struct list process_fd_table;       /* List of this process' file 
+                                           descriptors*/
     int process_fd_next;                /* ID to be assigned to next fd */
 #endif
     int64_t wake_tick;                  /* Number of ticks left to sleep*/
