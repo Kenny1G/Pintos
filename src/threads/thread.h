@@ -115,8 +115,8 @@ struct thread
 
     struct file* exec_file;             /* The file that spawned this process*/
 
-    struct list process_fd_table;          /* List of this process' file descriptors*/
-    int process_fd_next;                   /* ID to be assigned to next fd */
+    struct list process_fd_table;       /* List of this process' file descriptors*/
+    int process_fd_next;                /* ID to be assigned to next fd */
 #endif
     int64_t wake_tick;                  /* Number of ticks left to sleep*/
     struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
