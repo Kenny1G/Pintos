@@ -213,6 +213,7 @@ process_exit (void)
   if (cur->inparent != NULL)
     {
       cur->inparent->exit_code = cur->process_exit_code;
+      cur->inparent->thread = NULL;
       sema_up (&cur->inparent->exited);
     }
   /* Orphan all child processes. */

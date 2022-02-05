@@ -113,6 +113,51 @@ shell can easily handle parsing more complicated argument structures.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+FOR GENERAL:
+typedef bool list_find_func (struct list_elem *elem, void *aux);
+    Prototype for a generic helper function for `list_find` which returns 
+    true for the ELEM that we want to find in some list.
+
+MEMBERS IN STRUCT THREAD:
+char *process_fn;
+    Copy of the filename running in this process. Used to print the exit message on
+    process_exit.
+int32_t process_exit_code;
+    Stores the exit code of the current thread to be printed on process_exit.
+struct process_child *inparent;
+    Pointer to a datastructure living in the parent process to reflect the status of 
+    this current child process. Set to NULL if parent is dead. Protected with the 
+    process_child_lock lock.
+struct list process_children;
+    List of datastructures reflecting the status of all child processes, including dead
+    ones. Protected by the process_child_lock lock.
+
+LOCKS:
+static struct lock process_child_lock;
+    Global lock protecting all accesses to members inparent and process_children for
+    all threads.
+
+PROCESS EXEC/WAIT:
+struct process_child {
+  struct thread *thread;
+  struct list_elem elem;
+  int32_t exit_code;
+  struct semaphore exited;
+};
+    Datastructre to keep track of the status of one child in parent thread->process_children.
+    THREAD points to the child process struct thread if child is still alive.
+    ELEM appends datastrcture to the parent thread->process_children.
+    EXIT_CODE exit code of this child.
+    EXITED up'd when the child exits.
+
+SYSCALL INFRASTRUCTURE:
+#define SYSCALL_CNT SYS_INUMBER + 1
+    The number of supported syscalls. SYS_INUMBER is the syscall with the biggest index.
+typedef void syscall_handler_func (struct intr_frame *);
+    Protoype of a syscall handler function dispatched for some syscall.
+static syscall_handler_func *syscall_handlers[SYSCALL_CNT];
+    A list of supported syscall's mapping the syscall number to its syscall_handler_func.
+
 FOR DENY WRITES:
 To allow us to properly deny writes, we added a file pointer to the executable
 file that spawened the process to the thread struct. 
@@ -126,6 +171,21 @@ file that spawened the process to the thread struct.
 
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
+We implemneted two helper functions as follows:
+    static void syscall_validate_user_memory (const void *uaddr, size_t size)
+    static void syscall_validate_user_string (const char *uaddr, size_t max_size);
+These functions check that an address is 
+  1. Not NULL
+  2. Below PHYS_BASE
+  3. Mapped with the process pagedir
+  4. Same 3 apply to entire block of SIZE bytes following UADDR.
+If any of these conditions is not met, it terminates the user process and frees its
+resources. 
+These functions are used to validate user memory at given addresses before attempting
+to read or write on them. The following function uses them to extract arguments passed
+from the user process stack.
+    static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx)
+Which validates and reads memory at the appropriate index relative to %esp.
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -133,9 +193,30 @@ file that spawened the process to the thread struct.
 >> (e.g. calls to pagedir_get_page()) that might result?  What about
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
+Our current implementation relies on the function syscall_validate_user_memory which 
+takes an address and a block size. It then iterates page by page over that block of 
+memory and checks the validity of each page only once. Therefore, if the user is passing
+a page-size block, we will need either one or two calls to pagedir_get_page because the
+page-sized block might be broken into two virtual pages. If the user is copying 2 bytes
+of data, we still need either one or two calls. Because the 2 bytes might live on the
+end and the beginning of two different virtual pages. Given that we need to check each
+virtual page individually, there's no room for further improvement on this end. 
 
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
+We use the `struct process_child` to keep track of the status of child processes.
+When `wait` is called. We first find the child in `thread->process_children` 
+corresponding to the TID passed protected by the `process_child_lock` lock.
+If it's found, we down the `exited` semaphore in `process_child` which is only up'd 
+after the child process terminates. 
+Finally, we remove the child from the children list and return its `exit_code` 
+from `process_child` before freeing the memory of the `process_child` struct.
+On the other hand, when a process exits, it acquires the `process_child_lock` and up's
+its `process_child` `exited` semaphore. It also updates the `process_child` exit_code 
+and `thread` appropriately. 
+Finally, it updates the `inparent` member of all its children processes to point to NULL
+and frees their `process_child` memory. These orphaned child processes don't need to update
+their parent when they exit in the future. 
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -150,6 +231,16 @@ file that spawened the process to the thread struct.
 >> allocated resources (locks, buffers, etc.) are freed?  In a few
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
+Decomposition helps with this problem. Our approach is to define `syscall_validate_user_memory`
+which is called on every memory block we try to access on the user memory. This function
+is designed to never return if called on invalid memory. If that happens, it calls 
+`syscall_terminate_process` which frees all process resources and exits it. 
+For example, when `syscall_write` is called. `syscall_get_arg` calls `syscall_validate_user_memory`
+on the corresponding address on the user stack. Then `syscall_validate_user_memory` is called
+on the provided buffer address by the user for the provided size. If any of these validations
+fails, `syscall_terminate_process` is called which then frees all dynamic memory (e.g. process
+filename, process children, etc.). If any new features are added that require freeing memory on
+termination, they should be added to this function.
 
 ---- SYNCHRONIZATION ----
 
@@ -157,6 +248,9 @@ file that spawened the process to the thread struct.
 >> fails, so it cannot return before the new executable has completed
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
+We use a `thread->loaded` semaphore which is down'd on a call to exec (so
+it never returns until it unblocks by being up'd) and up'd when the process
+is loaded successfully. 
 
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
@@ -164,17 +258,44 @@ file that spawened the process to the thread struct.
 >> that all resources are freed in each case?  How about when P
 >> terminates without waiting, before C exits?  After C exits?  Are
 >> there any special cases?
+P waits for C before C exits:
+    P blocks on the `sema_down(child->exited)` until that semaphore is up'd 
+    in the child. This datastructure is protected by `process_child_lock`.
+P waits for C after C exits:
+    When C had exited, it had up'd its child semaphore protected by 
+    `process_child_lock` and therefore when P calls wait, it down's the 
+    semaphore without needing to block and returns.
+P terminates before C exits:
+    When P terminates, it free's all memory assiciated with its children in 
+    `thread->process_children` and sets their `inparent` to NULL. This lets
+    them know that they are orphaned when they exit so they don't need to update
+    tehir dead parent. All these operations are protected by the `process_child_lock`.
+P terminates after C exits:
+    When P terminates, it frees all its `thread->process_children` memory. However,
+    because its children member `THREAD` is NULL, it doesn't need to let them know
+    that they are orphaned (and it shouldn't because their `struct thread` memory 
+    had already been free'd).
+This design is very modular that it doesn't need to account for any further edge cases.
+
 
 ---- RATIONALE ----
 
 >> B9: Why did you choose to implement access to user memory from the
 >> kernel in the way that you did?
+We choose this way because it's sematically simple. There is a clear list of conditions on
+valid memory that are followed in sequence. Other implementations such as modifying the 
+exception handler for pagefault offer higher effeciency. However, such implementation 
+involves wide changes and assumptions across different parts of the OS which makes it 
+complicated. 
+Our implementation also abstract away the termination of the process if it violates memory
+and frees its resources automatically should it detect a violation.
 
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+We haven't changed it.
 
                SURVEY QUESTIONS
                ================
