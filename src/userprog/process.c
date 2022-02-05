@@ -112,6 +112,33 @@ done: /* Arrives here on success or error. */
   return tid;
 }
 
+static bool
+process_elem_tid_equal (struct list_elem *elem, void *aux)
+{
+  struct process_child *child = list_entry (elem, struct process_child, elem);
+  return child->thread != NULL && child->thread->tid == *(tid_t *)aux;
+}
+
+static bool
+process_elem_fd_equal (struct list_elem *elem, void *aux)
+{
+  struct process_fd * fd = list_entry(elem, struct process_fd, list_elem);
+  return fd->id == *(int *)aux;
+}
+
+struct process_fd *
+process_get_fd(struct thread *t, int id)
+{
+  struct list_elem *e;
+  if (!list_empty(&t->process_fd_table))
+    {
+      e = list_find(&t->process_fd_table, process_elem_fd_equal,
+                    &id);
+      return list_entry(e, struct process_fd, list_elem);
+    }
+  return NULL;
+}
+
 int
 process_new_fd(struct thread *t, struct file *file, char* file_name)
 {
@@ -133,25 +160,6 @@ process_remove_fd(struct thread *t, int id)
   if (fd == NULL) return;
   list_remove(&fd->list_elem);
   free(fd);
-}
-
-struct process_fd *
-process_get_fd(struct thread *t, int id)
-{
-  struct list_elem *e;
-  if (!list_empty(&t->process_fd_table))
-    {
-      e = list_front(&t->process_fd_table);
-      while (e != list_end(&t->process_fd_table))
-        {
-          struct process_fd * fd = list_entry(e, struct process_fd, list_elem);
-          if (fd->id == id)
-            {
-              return fd;
-            }
-        }
-    }
-  return NULL;
 }
 
 /* A thread function that loads a user process and starts it
@@ -203,13 +211,6 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
-}
-
-static bool
-process_elem_tid_equal (struct list_elem *elem, void *aux)
-{
-  struct process_child *child = list_entry (elem, struct process_child, elem);
-  return child->thread != NULL && child->thread->tid == *(tid_t *)aux;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
