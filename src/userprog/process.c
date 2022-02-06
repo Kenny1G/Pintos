@@ -90,7 +90,7 @@ process_execute (const char *file_name)
   
   /* Parse out program name without modifying str */
   size_t len_prog_name = strcspn(p_info->cmd_line, " ");
-  p_info->program_name = calloc(sizeof(char), len_prog_name + 1);
+  p_info->program_name = calloc (sizeof(char), len_prog_name + 1);
   if (p_info->program_name == NULL)
     {
       tid = TID_ERROR;
@@ -151,7 +151,7 @@ int
 process_new_fd(struct thread *t, struct file *file, char* file_name)
 {
   int id = t->process_fd_next++;
-  struct process_fd *fd = malloc(sizeof(struct process_fd));
+  struct process_fd *fd = malloc (sizeof(struct process_fd));
   if (fd == NULL) return -1;
 
   fd->id = id;
