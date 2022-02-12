@@ -90,7 +90,7 @@ process_execute (const char *file_name)
   
   /* Parse out program name without modifying str */
   size_t len_prog_name = strcspn(p_info->cmd_line, " ");
-  p_info->program_name = calloc(sizeof(char), len_prog_name + 1);
+  p_info->program_name = calloc (sizeof(char), len_prog_name + 1);
   if (p_info->program_name == NULL)
     {
       tid = TID_ERROR;
@@ -112,6 +112,8 @@ done: /* Arrives here on success or error. */
         list_remove (&p_child->elem);
       free (p_child);
     }
+  else
+    p_child->tid = tid;
   if (p_info != NULL)
     palloc_free_page (p_info->cmd_line);
   free (p_info);
@@ -122,7 +124,7 @@ static bool
 process_elem_tid_equal (struct list_elem *elem, void *aux)
 {
   struct process_child *child = list_entry (elem, struct process_child, elem);
-  return child->thread != NULL && child->thread->tid == *(tid_t *)aux;
+  return child->tid == *(tid_t *)aux;
 }
 
 static bool
@@ -149,7 +151,7 @@ int
 process_new_fd(struct thread *t, struct file *file, char* file_name)
 {
   int id = t->process_fd_next++;
-  struct process_fd *fd = malloc(sizeof(struct process_fd));
+  struct process_fd *fd = malloc (sizeof(struct process_fd));
   if (fd == NULL) return -1;
 
   fd->id = id;

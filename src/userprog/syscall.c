@@ -224,7 +224,7 @@ syscall_get_arg (struct intr_frame *f, size_t idx)
 /* Shuts down the machine by calling shutdown_power_off.
    Never returns. */
 static void 
-syscall_halt (struct intr_frame *f)
+syscall_halt (struct intr_frame *f UNUSED)
 {
   shutdown_power_off ();
 }
@@ -316,7 +316,7 @@ syscall_open (struct intr_frame *f)
       /* Set file_wrapper members */
       /* Allocate file name on heap */
       size_t len = strlen(file_name) + 1;
-      file_wrapper->file_name = malloc(len);
+      file_wrapper->file_name = malloc (len);
       if (file_wrapper->file_name == NULL)
         {
           free(file_wrapper);
