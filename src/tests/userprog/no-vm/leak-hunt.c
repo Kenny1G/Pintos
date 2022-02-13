@@ -38,7 +38,7 @@
    remove it. Therefore you'll see errors printed for subsequent runs of that
    test, but it still shouldn't leak. */
 static char *testnames[] = {
-  "args-multiple"
+  "multi-oom"
 };
 //  "open-normal",
 //  "close-normal",
