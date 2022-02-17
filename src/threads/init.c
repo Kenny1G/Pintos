@@ -70,7 +70,7 @@ static void locate_block_devices (void);
 static void locate_block_device (enum block_type, const char *name);
 #endif
 
-int main (void) NO_RETURN;
+int main (void);
 
 /* Pintos main program. */
 int
@@ -113,6 +113,7 @@ main (void)
 #ifdef USERPROG
   exception_init ();
   syscall_init ();
+  process_init ();
 #endif
 
   /* Start thread scheduler and enable interrupts. */

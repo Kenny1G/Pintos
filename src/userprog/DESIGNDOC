@@ -1,0 +1,546 @@
+             +--------------------------+
+             |          CS 212          |
+             | PROJECT 2: USER PROGRAMS |
+             |     DESIGN DOCUMENT      |
+             +--------------------------+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Eva Batelaan       <batelaan@stanford.edu>
+Kenny Oseleononmen <kenny1g@stanford.edu>
+Akram Sbaih        <akram@stanford.edu>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+               ARGUMENT PASSING
+               ================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct process_info {
+  char *cmd_line;           /* Pointer to the cmd line of args on the heap. */
+  char *progam_name;        /* Pointer to the program name (first arg). */
+  struct semaphore loaded;  /* Prevents the thread from running until process
+                               info is loaded in the stack */
+}
+Used to pass info concerning the process' name and arguments from
+process_execute() to load(), where the stack is intitiated.
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe how you implemented argument parsing.  How do
+>> you arrange for the elements of argv[] to be in the right order?
+>> How do you avoid overflowing the stack page?
+
+process_execute() uses thread_create() to call start_process() which calls
+load(). The stack of the thread is set up in load(), so we have to make sure
+the stack is created and the args are put into the stack before the thread
+starts to run. Therefore, we chose to used a sempahore that would block the
+thread until it had been fully loaded, and then we could up that semaphore so
+that the thread could run. We needed to be able to pass information from
+process_execute() to thread_create() and something that could hold the
+aforementioned needed semaphore, so we created the process_info struct.
+
+We parsed the arguments and passed them onto the stack after the stack was
+created in the load() function. We arrange for elements of argv[] to be in the
+right order using the following steps:
+ - pushing filename and arg strings onto the stack in order
+ - word aligning to 4 bytes
+ - starting w nullptr, pushing the references to the args on the stack in
+   reverse order (null, argc ... arg0)
+ - then push argv, argc, and return address onto the stack
+
+We avoid overflowing stack page by allocating our process_info stuct on the
+heap. We only allocate a page for the purposes of this project, so have to
+limit the file name and args to PGSIZE. However, since we're adding more than
+just the file name and args, (we're also adding their references, argc, etc.)
+we make sure to not overflow the stack by making sure we're within the
+boundaries of the thread's stack whenever we write to it using stack_push().
+
+---- RATIONALE ----
+
+>> A3: Why does Pintos implement strtok_r() but not strtok()?
+
+According to the man page, strtok_r() is a reentrant version of strtok().
+strtok() uses a static buffer while parsing to keep track of the point from
+which to start searching for the next token. However, strtok_r() has an extra
+argument, saveptr, which is used internally to maintain context between
+succecessive calls that parse the same string. Because strtok_r() maintains
+state between calls internally through the extra argument rather than with a
+global static variable, strtok_r() is MT-safe, which means it is safe to call
+in the presence of other threads, whereas strtok() is MT-Unsafe, so it invokes
+undefined behavior if a context switch happens while strtok() is called and
+another thread calls strtok(). However, strtok_r() should not be called by
+mutiple threads on the same string because strtok_r() modifies the string.
+
+>> A4: In Pintos, the kernel separates commands into a executable name
+>> and arguments.  In Unix-like systems, the shell does this
+>> separation.  Identify at least two advantages of the Unix approach.
+
+The UNIX approach scopes arguemnt handling more appropriately, handling
+parsing in the shell keeps all argument parsing client-side. This isolation
+helps prevents introducing additional complexity and bugs in the kernel. It
+shoudln't be the kerenel's job to parse arguments since there is no reason it
+can't be done on the user side. Also if the argument parsing results in a
+crash, it's better to crash the shell than the kernel.
+
+The Pintos approach is also just a more naive implementation. Since Pintos
+just parses the command lines as tokens separated by white space, it cannot
+handle additional complexity within arguments, such as differentiating between
+an argument starting with '-' vs one starting with '--'. However, the UNIX
+shell can easily handle parsing more complicated argument structures.
+
+                 SYSTEM CALLS
+                 ============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+LIST.H:
+typedef bool list_find_func (struct list_elem *elem, void *aux);
+    Prototype for a generic helper function for `list_find` which returns
+    true for the ELEM that we want to find in some list.
+
+
+THREAD.H:
+#define START_FD 2                      /*First fd a process can use*/
+We added a constant that is used to intialize process_fd_next when the thread
+is intialized.
+
+MEMBERS STRUCT THREAD:
+struct thread
+{
+...
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
+    char *process_fn;                   /* Filename in process_execute. */
+    int32_t process_exit_code;          /* Exit code for process_exit. */
+    
+    /* Guarded by process.c/process_child_lock. */
+    struct process_child *inparent;     /* Record of T in its parent.
+                                           NULL if orphaned. */
+    struct list process_children;       /* List of child processes. */
+
+    /* File system */
+    struct file* exec_file;             /* The file that spawned this process*/
+
+    struct list process_fd_table;       /* List of this process' file 
+                                           descriptors*/
+    int process_fd_next;                /* ID to be assigned to next fd */
+#endif
+...
+}
+
+char *process_fn;
+    Copy of the filename running in this process. Used to print the exit
+    message on process_exit.
+int32_t process_exit_code;
+    Stores the exit code of the current thread to be printed on process_exit.
+struct process_child *inparent;
+    Pointer to a datastructure living in the parent process to reflect the
+    status of this current child process. Set to NULL if parent is dead.
+    Protected with the process_child_lock lock.
+struct list process_children;
+    List of datastructures reflecting the status of all child processes, 
+    including dead ones. Protected by the process_child_lock lock.
+struct file* exec_file;
+    To allow us to properly deny writes, we added a file pointer to the 
+    executable file that spawened the process to the thread struct.
+struct list process_fd_table;
+    List of the process's open file discriptors.
+int process_fd_next;
+    Counter used to keep track of the next fd number to assign.
+
+
+PROCESS.H:
+struct process_fd
+ {
+   int id;                     /* ID of file descriptor*/
+   struct list_elem list_elem; /* List element to place fd in table*/
+   struct file *file;          /* File associated with fd*/
+   char* file_name;            /* Name of file*/
+ };
+
+File descriptor object held by the owning process. Contains the file pointer,
+file name, and the list_elem used by the owning process.
+
+struct process_child {
+  struct thread *thread;
+  struct list_elem elem;
+  int32_t exit_code;
+  struct semaphore exited;
+};
+
+Datastructre to keep track of the status of one child in parent the parent
+thread's process_children list.
+struct thread *thread;
+  Points to the child process struct thread if child is still alive.
+struct list_elem elem;
+  Appends datastrcture to the parent thread->process_children.
+int32_t exit_code;
+  Exit code of this child.
+struct semaphore exited;
+  Up'd when the child exits.
+
+We also declared four new functions:
+
+void process_init (void);
+  Used to initialize the lock used to protect all accesses to members inparent
+  and process_children.
+
+int process_new_fd(struct thread *t, struct file *file, char* file_name);
+  Adds a file descriptor to a thread's list of open file descriptors and
+  returns the fd number that the thread assigned to the file.
+
+void process_remove_fd(struct thread *t, int id);
+  Removes a file descriptor to a thread's list of open file descriptors.
+
+struct process_fd *process_get_fd(struct thread *t, int id);
+  Given a fd number, retrieves the associated process_fd object from the
+  thread's list of file descriptors.
+
+PROCESS.C:
+
+static struct lock process_child_lock;
+    Global lock protecting all accesses to members inparent and
+    process_children for all threads.
+
+SYSCALL.H:
+void syscall_close_helper (int fd);
+    Helper funciton used by process.c and syscall.c to close a file descriptor
+    in the current thread.
+
+SYSCALL.C:
+
+struct lock syscall_file_lock;
+  Lock to synchronize filesystem access since the filesystem is not thread
+  safe.
+
+struct hash syscall_file_table;
+  System-wide table of open files so that no open file is removed.
+
+struct syscall_file
+  {
+    struct hash_elem hash_elem; /* Hash table element. */
+    char* file_name;            /* Key in hash table. */
+    int count;                  /* Number of open instances of file. */
+    struct file* file;          /* File associated with this wrapper. */            
+    bool marked_del;            /* If this file is to be removed. */
+  };
+
+Data structure used to hold global information about an open file. It's used
+to coordinate valid file removal.
+
+#define SYSCALL_CNT SYS_INUMBER + 1
+    The number of supported syscalls. SYS_INUMBER is the syscall with the
+    biggest index.
+
+typedef void syscall_handler_func (struct intr_frame *);
+    Protoype of a syscall handler function dispatched for some syscall.
+
+static syscall_handler_func *syscall_handlers[SYSCALL_CNT];
+    A list of supported syscall's mapping the syscall number to its 
+    syscall_handler_func.
+
+>> B2: Describe how file descriptors are associated with open files.
+>> Are file descriptors unique within the entire OS or just within a
+>> single process?
+
+File descriptors are unique to each process.
+
+Each thread structure has a counter which is used to assign an open file a
+unique file descriptor number for that specific process. The a pointer to the
+open file and the assigned file descriptor are stored in a process_fd struct
+that is added to the list of open file descriptor in the thread.
+
+Each time a file is opened, the global hash table of open files is updated by
+incrementing the count how many open file descriptors there are for the file.
+The hash table stores the file pointer for the file and shares the same
+pointer to all associated process_fd structs. This means that for any given
+open file, all process_fd structs for that file are sharing the same pointer.
+Therefore, a file can only be closed if the syscall_file's count is 0.
+
+
+---- ALGORITHMS ----
+
+>> B3: Describe your code for reading and writing user data from the
+>> kernel.
+We implemneted two helper functions as follows:
+    static void syscall_validate_user_memory (const void *uaddr, size_t size);
+    static void syscall_validate_user_string (const char *uaddr,
+                                              size_t max_size);
+These functions check that an address is
+  1. Not NULL
+  2. Below PHYS_BASE
+  3. Mapped with the process pagedir
+  4. Same 3 apply to entire block of SIZE bytes following UADDR.
+If any of these conditions is not met, it terminates the user process and frees
+its resources.
+
+We specifically use pagedir_get_page to avoid page faulting when trying to
+validate memory.
+
+These functions are used to validate user memory at given addresses before
+attempting to read or write to them. The following function uses them to
+extract arguments passed from the user process stack.
+    static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx)
+Which validates and reads memory at the appropriate index relative to %esp.
+
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data
+>> to be copied from user space into the kernel.  What is the least
+>> and the greatest possible number of inspections of the page table
+>> (e.g. calls to pagedir_get_page()) that might result?  What about
+>> for a system call that only copies 2 bytes of data?  Is there room
+>> for improvement in these numbers, and how much?
+Our current implementation relies on the function syscall_validate_user_memory which 
+takes an address and a block size. It then iterates page by page over that block of 
+memory and checks the validity of each page only once. Therefore, if the user is passing
+a page-size block, we will need either one or two calls to pagedir_get_page because the
+page-sized block might be broken into two virtual pages. If the user is copying 2 bytes
+of data, we still need either one or two calls. Because the 2 bytes might live on the
+end and the beginning of two different virtual pages. Given that we need to check each
+virtual page individually, there's no room for further improvement on this end. 
+
+Our current implementation relies on the function syscall_validate_user_memory
+which takes an address and a block size. It then iterates page by page over
+that block of memory and checks the validity of each page only once. Therefore,
+if the user is passing a page-size block, we will need either one or two calls
+to pagedir_get_page because the page-sized block might be broken into two
+virtual pages. If the user is copying 2 bytes of data, we still need either one
+or two calls. Because the 2 bytes might live on the end and the beginning of 
+two different virtual pages. Given that we need to check each virtual page
+individually, there's no room for further improvement on this end.
+
+>> B5: Briefly describe your implementation of the "wait" system call
+>> and how it interacts with process termination.
+We use the `struct process_child` to keep track of the status of child processes.
+When `wait` is called. We first find the child in `thread->process_children` 
+corresponding to the TID passed protected by the `process_child_lock` lock.
+If it's found, we down the `exited` semaphore in `process_child` which is only up'd 
+after the child process terminates. 
+Finally, we remove the child from the children list and return its `exit_code` 
+from `process_child` before freeing the memory of the `process_child` struct.
+On the other hand, when a process exits, it acquires the `process_child_lock` and up's
+its `process_child` `exited` semaphore. It also updates the `process_child` exit_code 
+and `thread` appropriately. 
+Finally, it updates the `inparent` member of all its children processes to point to NULL
+and frees their `process_child` memory. These orphaned child processes don't need to update
+their parent when they exit in the future. 
+
+We use the `struct process_child` to keep track of the status of 
+child processes. When `wait` is called. We first find the child in
+`thread->process_children` corresponding to the TID passed protected by the
+`process_child_lock` lock. If it's found, we down the `exited` semaphore in
+`process_child` which is only up'd after the child process terminates.
+Finally, we remove the child from the children list and return its `exit_code`
+from `process_child` before freeing the memory of the `process_child` struct.
+On the other hand, when a process exits, it acquires the `process_child_lock`
+and up's its `process_child` `exited` semaphore. It also updates the
+`process_child` exit_code and `thread` appropriately. Finally, it updates the
+`inparent` member of all its children processes to point to NULL and frees
+their `process_child` memory. These orphaned child processes don't need to
+update their parent when they exit in the future.
+
+>> B6: Any access to user program memory at a user-specified address
+>> can fail due to a bad pointer value.  Such accesses must cause the
+>> process to be terminated.  System calls are fraught with such
+>> accesses, e.g. a "write" system call requires reading the system
+>> call number from the user stack, then each of the call's three
+>> arguments, then an arbitrary amount of user memory, and any of
+>> these can fail at any point.  This poses a design and
+>> error-handling problem: how do you best avoid obscuring the primary
+>> function of code in a morass of error-handling?  Furthermore, when
+>> an error is detected, how do you ensure that all temporarily
+>> allocated resources (locks, buffers, etc.) are freed?  In a few
+>> paragraphs, describe the strategy or strategies you adopted for
+>> managing these issues.  Give an example.
+Decomposition helps with this problem. Our approach is to define `syscall_validate_user_memory`
+which is called on every memory block we try to access on the user memory. This function
+is designed to never return if called on invalid memory. If that happens, it calls 
+`syscall_terminate_process` which frees all process resources and exits it. 
+For example, when `syscall_write` is called. `syscall_get_arg` calls `syscall_validate_user_memory`
+on the corresponding address on the user stack. Then `syscall_validate_user_memory` is called
+on the provided buffer address by the user for the provided size. If any of these validations
+fails, `syscall_terminate_process` is called which then frees all dynamic memory (e.g. process
+filename, process children, etc.). If any new features are added that require freeing memory on
+termination, they should be added to this function.
+
+Decomposition helps with this problem. Our approach is to define `syscall_validate_user_memory`
+which is called on every memory block we try to access on the user memory. This
+function is designed to never return if called on invalid memory. If that
+happens, it calls `syscall_terminate_process` which frees all process resources
+and exits it. For example, when `syscall_write` is called. `syscall_get_arg`
+calls `syscall_validate_user_memory` on the corresponding address on the user
+stack. Then `syscall_validate_user_memory` is called on the provided buffer
+address by the user for the provided size. If any of these validations fails,
+`syscall_terminate_process` is called which then frees all dynamic memory (e.g.
+process filename, process children, etc.). If any new features are added that
+require freeing memory on termination, they should be added to this function.
+
+---- SYNCHRONIZATION ----
+
+>> B7: The "exec" system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls "exec"?
+We use a `thread->loaded` semaphore which is down'd on a call to exec (so
+it never returns until it unblocks by being up'd) and up'd when the process
+is loaded successfully. 
+
+We use a `thread->loaded` semaphore in process_execute() which is down'd until
+load() has run to completion (successfully or not).
+
+The status is passed back to the thread that calls "exec", the parent, through
+the associated process_child struct.
+
+>> B8: Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits?  Are
+>> there any special cases?
+P waits for C before C exits:
+    P blocks on the `sema_down(child->exited)` until that semaphore is up'd 
+    in the child. This datastructure is protected by `process_child_lock`.
+P waits for C after C exits:
+    When C had exited, it had up'd its child semaphore protected by 
+    `process_child_lock` and therefore when P calls wait, it down's the 
+    semaphore without needing to block and returns.
+P terminates before C exits:
+    When P terminates, it free's all memory assiciated with its children in 
+    `thread->process_children` and sets their `inparent` to NULL. This lets
+    them know that they are orphaned when they exit so they don't need to update
+    tehir dead parent. All these operations are protected by the `process_child_lock`.
+P terminates after C exits:
+    When P terminates, it frees all its `thread->process_children` memory. However,
+    because its children member `THREAD` is NULL, it doesn't need to let them know
+    that they are orphaned (and it shouldn't because their `struct thread` memory 
+    had already been free'd).
+This design is very modular that it doesn't need to account for any further edge cases.
+
+
+P waits for C before C exits:
+    P blocks on the `sema_down(child->exited)` until that semaphore is up'd
+    in the child. This datastructure is protected by `process_child_lock`.
+P waits for C after C exits:
+    When C had exited, it had up'd its child semaphore protected by
+    `process_child_lock` and therefore when P calls wait, it down's the
+    semaphore without needing to block and returns.
+P terminates before C exits:
+    When P terminates, it free's all memory assiciated with its children in
+    `thread->process_children` and sets their `inparent` to NULL. This lets
+    them know that they are orphaned when they exit so they don't need to update
+    tehir dead parent. All these operations are protected by the `process_child_lock`.
+P terminates after C exits:
+    When P terminates, it frees all its `thread->process_children` memory. However,
+    because its children member `THREAD` is NULL, it doesn't need to let them know
+    that they are orphaned (and it shouldn't because their `struct thread` memory
+    had already been free'd).
+This design is very modular that it doesn't need to account for any further edge cases.
+
+
+---- RATIONALE ----
+
+>> B9: Why did you choose to implement access to user memory from the
+>> kernel in the way that you did?
+We choose this way because it's sematically simple. There is a clear list of conditions on
+valid memory that are followed in sequence. Other implementations such as modifying the 
+exception handler for pagefault offer higher effeciency. However, such implementation 
+involves wide changes and assumptions across different parts of the OS which makes it 
+complicated. 
+Our implementation also abstract away the termination of the process if it violates memory
+and frees its resources automatically should it detect a violation.
+
+We choose to approach accessing user memory by first validating and ensuring
+valid access and then directly accessing the memory because we considered it
+sematically simple. There is a clear list of conditions on valid memory that
+are followed in sequence. Other implementations such as modifying the exception
+handler for pagefault offer higher effeciency. However, such implementation
+involves wide changes and assumptions across different parts of the OS which
+makes it complicated.
+
+Our implementation also abstract away the termination of the process if it
+violates memory and frees its resources automatically should it detect a
+violation.
+
+>> B10: What advantages or disadvantages can you see to your design
+>> for file descriptors?
+
+Advantages: 
+
+The global lock on open file hash table is simple and easy to work with. The lock
+doubled as the lock we use whenever we accessed the filesysem, regardless of
+if that access required us to also touch the file table or not.
+
+Per-process file descriptor numbers eliminate the need for a global lock on a
+file descriptor number generator.
+
+
+Disadvantages:
+
+The global lock on the open file hash table lack granularity. Another option
+would have been to have a lock for each struct entry and then only use a
+global lock then adding (in create) or removing (in close and remove) a
+syscall_file struct from the table. However, this would have been significantly
+harder to debug.
+
+Per-process file descriptor numbers have to be decoded with additional helper
+functions which can make debugging more difficult.
+
+
+
+Global lock on open file hash table is coarse; could add individual locks on
+each open file fd_hash struct for most operations other than creation/deletion.
+
+>> B11: The default tid_t to pid_t mapping is the identity mapping.
+>> If you changed it, what advantages are there to your approach?
+We haven't changed it.
+
+We did not change it since the only need we could imagine would be if processes
+could have multiple threads.
+
+               SURVEY QUESTIONS
+               ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+The syscall and file descriptor parts were interesting and educational.
+
+Argument parsing was more tedious and felt less relevant to implement,
+especially becuase the Unix system does it differently.
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters or the remaining projects?
+
+>> Any other comments?
