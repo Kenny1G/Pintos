@@ -151,6 +151,8 @@ struct list_elem *list_pop_back (struct list *);
 /* List elements. */
 struct list_elem *list_front (struct list *);
 struct list_elem *list_back (struct list *);
+typedef bool list_find_func (struct list_elem *elem, void *aux);
+struct list_elem *list_find (struct list *, list_find_func *, void *aux);
 
 /* List properties. */
 size_t list_size (struct list *);
