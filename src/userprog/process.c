@@ -19,6 +19,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#include "vm/page.h"
 #include "syscall.h"
 
 /* Processes acquire this lock when modifying their parent or children
@@ -173,9 +174,9 @@ process_remove_fd(struct thread *t, int id)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *process_info)
 {
-  struct process_info *p_info = (struct process_info *) file_name_;
+  struct process_info *p_info = (struct process_info *) process_info;
   struct thread *cur = thread_current ();
   struct intr_frame if_;
   bool success = false;
@@ -425,10 +426,11 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
-  /* Allocate and activate page directory. */
+  /* Allocate and activate page directory and supplemntal page table. */
   t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL) 
+  if (t->pagedir == NULL || !page_table_init (t)) 
     goto done;
+  
   process_activate ();
 
   /* Open executable file. */
@@ -530,10 +532,8 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
   if (file != NULL) file_close (file);
   return success;
 }
-
-/* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+/* load() helpers. */
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -612,25 +612,19 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
+      uint8_t *page = page_alloc (upage);
+      if (page == NULL)
         return false;
 
       /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+      if (file_read (file, page, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          page_free (page);
           return false; 
         }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-
+      memset (page + page_read_bytes, 0, page_zero_bytes);
+      page_set_writable (page, writable);
+      
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
@@ -644,19 +638,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp) 
 {
-  uint8_t *kpage;
-  bool success = false;
+  uint8_t *page;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
+  page = page_alloc (((uint8_t *) PHYS_BASE) - PGSIZE);
+  if (page != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        palloc_free_page (kpage);
+      memset (page, 0, PGSIZE);
+      *esp = PHYS_BASE;
+      return true;
     }
-  return success;
+  return false;
 }
 
 /* Push data onto the stack if in bounds */
@@ -724,24 +715,4 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
   /* Push the return address. */
   success = stack_push(esp, &null_ptr, sizeof(void *));
   return success;
-}
-
-/* Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
