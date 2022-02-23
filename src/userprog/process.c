@@ -623,7 +623,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
           return false; 
         }
       memset (page + page_read_bytes, 0, page_zero_bytes);
-
+      page_set_writable (page, writable);
+      
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;

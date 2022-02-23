@@ -24,6 +24,7 @@ bool page_table_init (struct thread *t);
 void *page_alloc (void *uaddr);
 void page_free (void *uaddr);
 void page_set_writable (void *uaddr, bool writable);
+bool page_resolve_fault (void *fault_addr);
 struct page *page_lookup (struct thread *t, void *address);
 
 

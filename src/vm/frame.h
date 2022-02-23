@@ -1,5 +1,7 @@
 #include <list.h>
+#include <stdbool.h>
 #include "vm/page.h"
+#include "threads/thread.h"
 
 struct frame_table 
   {
@@ -7,12 +9,13 @@ struct frame_table
     struct list allocated_frames;
   };
 
-struct frame_entry
+struct frame
   {
     struct list_elem elem;
-    void *frame_addr;
-    struct page_entry *page;
+    void *kaddr;
+    struct thread *thread;
+    struct page *page;
   };
 
 void frame_init (void);
-void *frame_alloc (struct page_entry *);
+bool frame_alloc (struct thread *, struct page *);

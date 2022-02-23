@@ -65,19 +65,47 @@ page_alloc (void *uaddr)
   p->writable = true;
   pagedir_set_present (t->pagedir, uaddr, false);
   hash_insert (&t->page_table, &p->hash_elem);
-  printf ("\n>>> Allocd: %p\n", uaddr);
   return uaddr;
 }
 
 void
 page_set_writable (void *uaddr, bool writable)
 {
-  // TODO - and remember to call it
+  struct thread *t = thread_current ();
+  struct page *p;
+  void *kpage, *upage = pg_round_down (uaddr);
+
+  ASSERT (is_user_vaddr (uaddr));
+
+  p = page_lookup (t, uaddr);
+  if (p != NULL)
+    {
+      p->writable = writable;
+      /* Update the pagedir if the page is present. */
+      kpage = pagedir_get_page (t->pagedir, upage);
+      if (kpage != NULL)
+        pagedir_set_page (t->pagedir, upage, kpage, writable);
+    }
+
 }
 
 void
 page_free (void *uaddr)
 {
   // TODO - remove from tables
+}
+
+bool 
+page_resolve_fault (void *fault_addr)
+{
+  struct thread *t = thread_current ();
+  struct page *page;
+
+  ASSERT (is_user_vaddr (fault_addr));
+
+  page = page_lookup (t, pg_round_down (fault_addr));
+  if (page == NULL)  /* Fault address is not mapped. */
+    return false;
+  return frame_alloc (t, page);
 }
 
