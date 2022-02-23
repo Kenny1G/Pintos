@@ -3,6 +3,7 @@
 
 #include <debug.h>
 #include <list.h>
+#include <hash.h>
 #include <stdint.h>
 #include <fixed-point.h>
 
@@ -106,6 +107,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct hash page_table;             /* Supplemental page table for VM. */
     char *process_fn;                   /* Filename in process_execute. */
     int32_t process_exit_code;          /* Exit code for process_exit. */
     

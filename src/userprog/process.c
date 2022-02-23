@@ -426,10 +426,11 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
-  /* Allocate and activate page directory. */
+  /* Allocate and activate page directory and supplemntal page table. */
   t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL) 
+  if (t->pagedir == NULL || !page_table_init (t)) 
     goto done;
+  
   process_activate ();
 
   /* Open executable file. */
