@@ -12,6 +12,8 @@
 
 struct frame_table ft;
 
+/* Initializes the frame table FT by calling palloc_get_page on all
+   user pages and storing them as free frames for future use. */
 void
 frame_init (void)
 {
@@ -30,7 +32,13 @@ frame_init (void)
     }
 }
 
-bool 
+/* Allocates a free frame for THREAD's PAGE and updates THREAD's
+   pagedir to reflect the new physical address. Useful when resolving
+   a pagefault.
+
+   TODO: resolve other cases where PAGE is in swap etc. 
+   TODO: resolve eviction when no free frames are available. */
+bool
 frame_alloc (struct thread *thread, struct page *page)
 {
   struct frame *frame;
@@ -41,7 +49,6 @@ frame_alloc (struct thread *thread, struct page *page)
   list_push_back (&ft.allocated_frames, &frame->elem);
   frame->page = page;
   frame->thread = thread;
-
   return pagedir_set_page (thread->pagedir, page->uaddr, frame->kaddr, 
                            page->writable);
 }

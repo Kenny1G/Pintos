@@ -9,7 +9,7 @@
 static hash_less_func page_less;
 static hash_hash_func page_hash;
 
-
+/* Hash function that hashes a page's uaddr into its page_table hash table. */
 static unsigned 
 page_hash (const struct hash_elem *e, void *aux UNUSED)
 {
@@ -17,6 +17,7 @@ page_hash (const struct hash_elem *e, void *aux UNUSED)
   return hash_bytes (&p->uaddr, sizeof p->uaddr);
 }
 
+/* Hash comparison function necessary to use page_table as a hash table. */
 static bool 
 page_less (const struct hash_elem *a_,
            const struct hash_elem *b_,
@@ -27,6 +28,8 @@ page_less (const struct hash_elem *a_,
   return a->uaddr < b->uaddr;
 }
 
+/* Finds page with uaddr ADDRESS in T's page_table hash table returning 
+   its address or NULL if not found. */
 struct page *
 page_lookup (struct thread *t, void *address)
 {
@@ -38,12 +41,17 @@ page_lookup (struct thread *t, void *address)
   return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }
 
+/* Initializes the page_table hash table for a thread T. */
 bool
 page_table_init (struct thread *t)
 {
   return hash_init (&t->page_table, page_hash, page_less, NULL);
 }
 
+/* Allocates a page with user address UADDR in the current thread's
+   page_table. Invalidates the PTE for that page such that a future
+   pagefault would load the page lazily. Returns NULL if the page is 
+   already mapped or UADDR on success. */
 void *
 page_alloc (void *uaddr)
 {
@@ -68,6 +76,8 @@ page_alloc (void *uaddr)
   return uaddr;
 }
 
+/* Sets the writable bit to WRITABLE for page at UADDR and
+   updates its PTE accordingly. */
 void
 page_set_writable (void *uaddr, bool writable)
 {
@@ -89,12 +99,17 @@ page_set_writable (void *uaddr, bool writable)
 
 }
 
+/* Removes a page from the current thread's page_table and
+   frees its frame. */
 void
 page_free (void *uaddr)
 {
   // TODO - remove from tables
 }
 
+/* Attempts to resolve a pagefault on FAULT_ADDR by allocating
+   a frame for it. Returns true on success and false if
+   FAULT_ADDR is not a valid address in the first place. */
 bool 
 page_resolve_fault (void *fault_addr)
 {

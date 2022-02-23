@@ -214,6 +214,8 @@ pagedir_set_accessed (uint32_t *pd, const void *vpage, bool accessed)
     }
 }
 
+/* Sets the present bit to PRESENT in the PTE for virtual page
+   VPAGE in PD. Helpful to trigger pagefault on access. */
 void 
 pagedir_set_present (uint32_t *pd, const void *vpage, bool present)
 {
