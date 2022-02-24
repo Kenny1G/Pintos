@@ -94,7 +94,7 @@ page_set_writable (void *uaddr, bool writable)
       /* Update the pagedir if the page is present. */
       kpage = pagedir_get_page (t->pagedir, upage);
       if (kpage != NULL)
-        pagedir_set_page (t->pagedir, upage, kpage, writable);
+        pagedir_set_writable (t->pagedir, upage, writable);
     }
 
 }

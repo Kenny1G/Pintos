@@ -232,6 +232,24 @@ pagedir_set_present (uint32_t *pd, const void *vpage, bool present)
     }
 }
 
+/* Sets the writable bit to PRESENT in the PTE for virtual page
+   VPAGE in PD. */
+void 
+pagedir_set_writable (uint32_t *pd, const void *vpage, bool writable)
+{
+  uint32_t *pte = lookup_page (pd, vpage, false);
+  if (pte != NULL) 
+    {
+      if (writable)
+        *pte |= PTE_W;
+      else 
+        {
+          *pte &= ~(uint32_t) PTE_W; 
+          invalidate_pagedir (pd);
+        }
+    }
+}
+
 /* Loads page directory PD into the CPU's page directory base
    register. */
 void
