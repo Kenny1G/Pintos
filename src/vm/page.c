@@ -56,22 +56,23 @@ void *
 page_alloc (void *uaddr)
 {
   struct thread *t = thread_current ();
+  void *paddr = pg_round_down (uaddr);
   struct page *p;
 
   ASSERT (is_user_vaddr (uaddr));
 
   /* Verify that there's not already a page at that virtual
      address, then create a new page. */
-  p = page_lookup (t, uaddr);
+  p = page_lookup (t, paddr);
   if (p != NULL)  /* A page already exists with this address. */
     return NULL;
   p = malloc (sizeof (struct page));
   if (p == NULL)  /* Failed to allocate a page entry. */
     return NULL;
-  p->uaddr = uaddr;
+  p->uaddr = paddr;
   p->location = NEW;
   p->writable = true;
-  pagedir_set_present (t->pagedir, uaddr, false);
+  pagedir_set_present (t->pagedir, paddr, false);
   hash_insert (&t->page_table, &p->hash_elem);
   return uaddr;
 }
@@ -96,7 +97,6 @@ page_set_writable (void *uaddr, bool writable)
       if (kpage != NULL)
         pagedir_set_writable (t->pagedir, upage, writable);
     }
-
 }
 
 /* Removes a page from the current thread's page_table and

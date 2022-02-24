@@ -4,6 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 #include "vm/page.h"
 #include "vm/frame.h"
 
@@ -150,6 +151,12 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+  
+  /* For the case where the pagefault resulted from stack growth. */
+  if (is_user_vaddr (fault_addr)
+      && (uint8_t *)(fault_addr) >= (uint8_t *)(f->esp) - 32
+      && fault_addr >= STACK_LIMIT)
+    page_alloc (fault_addr);
 
   /* Attempt to resolve pagefault with VM or kill otherwise. */
   if (!page_resolve_fault (fault_addr))
