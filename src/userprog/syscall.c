@@ -100,6 +100,8 @@ static void syscall_seek (struct intr_frame *);
 static void syscall_tell (struct intr_frame *);
 static void syscall_close (struct intr_frame *);
 static void syscall_curmem (struct intr_frame *);
+static mapid_t syscall_mmap (struct intr_frame *);
+static void syscall_munmap (struct intr_frame *);
 
 /* Initialize syscalls by registering dispatch functions for supported
    syscall numbers and then registering the syscall interrupt handler. */
@@ -120,6 +122,8 @@ syscall_init (void)
   syscall_handlers[SYS_TELL] = syscall_tell;
   syscall_handlers[SYS_CLOSE] = syscall_close;
   syscall_handlers[SYS_CURMEM] = syscall_curmem;
+  syscall_handlers[SYS_MMAP] = syscall_mmap;
+  syscall_handlers[SYS_MUNMAP] = syscall_munmap;
   barrier ();  /* Write all handlers before starting syscalls. */ 
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
@@ -516,4 +520,19 @@ void syscall_close_helper (int fd)
 
   lock_release(&syscall_file_lock);
   return;
+}
+
+/* Maps the file open as fd into the process's virtual address space*/
+static mapid_t
+syscall_mmap (struct intr_frame *f)
+{ 
+  return MAP_FAILED;
+}
+
+/* Unmaps the mapping designated by mapping, which must be a mapping ID
+ * returned by a previous call to mmap by the same process that has not
+ * yet been unmapped. */
+static void 
+syscall_munmap (struct intr_frame *f)
+{
 }
