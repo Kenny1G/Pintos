@@ -1,4 +1,5 @@
 #include "vm/swap.h"
+#include <stdio.h>
 
 #define SECTORS_PER_PAGE (PGSIZE / BLOCK_SECTOR_SIZE)
 
@@ -12,6 +13,7 @@ swap_init (void)
   int slot_count;
 
   st.block_device = block_get_role (BLOCK_SWAP);
+  printf ("\n\n >>> SWAP INIT %p \n\n", st.block_device);
   if (st.block_device == NULL)
     PANIC ("Swap block device does not exist!");
   slot_count = block_size (st.block_device) / SECTORS_PER_PAGE;

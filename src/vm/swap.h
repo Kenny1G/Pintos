@@ -3,6 +3,7 @@
 #include <bitmap.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <debug.h>
 #include "threads/vaddr.h"
 #include "devices/block.h"
 #include "vm/frame.h"
