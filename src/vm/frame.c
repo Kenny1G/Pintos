@@ -41,33 +41,63 @@ frame_init (void)
   lock_release (&frame_table_lock);
 }
 
+/* FOR TESTING. */
+static void
+frame_evict_all (void)
+{
+  struct frame *frame = NULL;
+
+  lock_acquire (&frame_table_lock);
+  if (!list_empty (&ft.allocated_frames))
+    frame = list_entry (list_front (&ft.allocated_frames), struct frame, elem);
+  lock_release (&frame_table_lock);
+  if (frame != NULL)
+    {
+      frame_evict (frame);
+      frame_evict_all ();
+    }
+}
+
+/* Helper for frame_alloc. Chooses which frame to evict and evicts it.
+   Assumes that frame_table_lock is acquired by the current thread.
+
+   TODO - implement a better eviction strategy. */
+static struct frame *
+frame_pick_and_evict
+{
+  ASSERT (lock_held_by_current_thread (&frame_table_lock));
+
+  /* try palloc_get_page and free_frames and evict allocated_frames. */
+  /* implement pinning and unpinning and use them. */
+}
+
 /* Allocates a free frame for THREAD's PAGE and updates THREAD's
    pagedir to reflect the new physical address. Useful when resolving
-   a pagefault. The returned frame is pinned by default.
-
-   TODO: resolve other cases where PAGE is in swap etc. 
-   TODO: resolve eviction when no free frames are available. */
+   a pagefault. The returned frame is pinned by default. */
 struct frame *
 frame_alloc (void)
 {
   struct frame *frame;
 
-  ASSERT (!list_empty (&ft.free_frames));
-  
   lock_acquire (&frame_table_lock);
-  frame = list_entry (list_pop_front (&ft.free_frames), struct frame, elem);
-  list_push_back (&ft.allocated_frames, &frame->elem);
+  if (!list_empty (&ft.free_frames))
+    frame = list_entry (list_pop_front (&ft.free_frames), struct frame, elem);
+  else
+    frame = frame_pick_and_evict ();
   frame->pinned = true;
+  list_push_back (&ft.allocated_frames, &frame->elem);
   lock_release (&frame_table_lock);
   return frame;
 }
 
 /* Evicts FRAME by calling page_evict on its page if it exists. 
    Returns false if FRAME is pinned or page_evict fails and
-   true otherwise. */
+   true otherwise. Assumes frame_table_lock is acquired. */
 bool
 frame_evict (struct frame *frame)
 {
+  ASSERT (lock_held_by_current_thread (&frame_table_lock));
+  
   printf ("\n>> Evicting Frame %p\n", frame->kaddr);
   /* Will not evict a pinned frame. */
   if (frame->pinned)
@@ -76,11 +106,8 @@ frame_evict (struct frame *frame)
   if (frame->page != NULL && !page_evict (frame->page))
     return false;
   frame->page = NULL;
-  /* Reflect the change on the frame table. */
-  lock_acquire (&frame_table_lock);
+  /* Remove the frame from list of allocated frames. */
   list_remove (&frame->elem);
-  list_push_back (&ft.free_frames, &frame->elem);
-  lock_release (&frame_table_lock);
   printf ("\n>> Eviction complete.\n");
   return true;
 }

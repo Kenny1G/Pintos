@@ -29,14 +29,15 @@ struct page
     bool writable;                /* RW vs RO. */
     struct frame *frame;
     size_t swap_slot;
+    enum page_location evict_to;  /* Where to evict the frame (e.g. FILE). */
   };
 
-bool page_table_init (struct thread *t);
+bool page_table_init (void);
+void page_table_destroy (void);
 void *page_alloc (void *uaddr);
 void page_free (void *uaddr);
 bool page_evict (struct page *page);
 void page_set_writable (void *uaddr, bool writable);
 bool page_resolve_fault (void *fault_addr);
-struct page *page_lookup (struct thread *t, void *address);
 
 #endif /* vm/page.h */

@@ -290,6 +290,9 @@ process_exit (void)
     }
   lock_release (&process_child_lock);
 
+  /* Destroy the the thread's supplemental page directory. */
+  page_table_destroy ();
+
   /* Allow writes to the exec file again */
   if (cur->exec_file != NULL)
   {
@@ -308,7 +311,6 @@ process_exit (void)
       e = list_next (e);
       syscall_close_helper (fd->id); 
     }
-
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -429,7 +431,7 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory and supplemntal page table. */
   t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL || !page_table_init (t)) 
+  if (t->pagedir == NULL || !page_table_init ()) 
     goto done;
   
   process_activate ();
@@ -602,17 +604,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
-
-  /* Test Swap: */
-  printf ("\n >> Swap test begins.\n");
-  uint8_t *swap_test = page_alloc (upage);
-  printf ("\n before: %d", *swap_test);
-  *swap_test = 7;
-  printf ("\n before 2: %d", *swap_test);
-  frame_evict (page_lookup (thread_current (), swap_test)->frame);
-  printf ("\n after: %d", *swap_test);
-  printf ("\n >> Swap test ended.\n");
-  /* End test swap. */
 
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
