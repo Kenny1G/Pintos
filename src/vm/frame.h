@@ -3,7 +3,6 @@
 #include <list.h>
 #include <stdbool.h>
 #include "vm/page.h"
-#include "threads/thread.h"
 
 /* Keeps track of free and allocated frames in the system. */
 struct frame_table 
@@ -17,12 +16,14 @@ struct frame
   {
     struct list_elem elem;        /* Elem in either frame_table lists. */
     void *kaddr;                  /* Physical address = kernel address. */
-    struct thread *thread;        /* Thread of pagedir containing PAGE. */
     struct page *page;            /* The page mapped to this frame. */
+    bool pinned;                  /* Don't evict when pinned. */
   };
 
 void frame_init (void);
-bool frame_alloc (struct thread *, struct page *);
+struct frame *frame_alloc (void);
+void frame_free (struct frame *frame);
+bool frame_evict (struct frame *frame);
 
 
 #endif /* vm/frame.h */

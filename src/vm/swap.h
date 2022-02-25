@@ -3,8 +3,6 @@
 #include <bitmap.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <debug.h>
-#include "threads/vaddr.h"
 #include "devices/block.h"
 #include "vm/frame.h"
 
@@ -17,12 +15,11 @@ struct swap_table
   };
 
 /* Identifies one swap slot useful for paging. */
-typedef size_t swap_slot;
 #define SWAP_ERROR SIZE_MAX
 
 /* Swap Table paging functions. */
 void swap_init (void);
-swap_slot swap_out (struct frame *frame);
-bool swap_in (struct frame *frame, swap_slot slot_idx);
+size_t swap_out (void *frame);
+bool swap_in (void *frame, size_t slot_idx);
 
 #endif /* vm/swap.h */
