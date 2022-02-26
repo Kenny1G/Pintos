@@ -29,7 +29,7 @@ struct process_child
     struct semaphore exited;
   };
 
-struct mmap_entry
+struct process_mmap_entry
   {
     mapid_t id;                 /* ID of mmap*/
     struct list_elem list_elem; /* List element to place mmap in list */
@@ -39,7 +39,7 @@ struct mmap_entry
   };
 
 /* Wrapper struct for a page in an mmap*/
-struct mmap_page
+struct process_mmap_page
   {
     struct list_elem list_elem; /* List element to put page in mmap_pages */
     void* page_addr;            /* Virtual Address of page */
