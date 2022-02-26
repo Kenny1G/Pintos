@@ -107,7 +107,6 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct hash page_table;             /* Supplemental page table for VM. */
     char *process_fn;                   /* Filename in process_execute. */
     int32_t process_exit_code;          /* Exit code for process_exit. */
     
@@ -115,6 +114,10 @@ struct thread
     struct process_child *inparent;     /* Record of T in its parent.
                                            NULL if orphaned. */
     struct list process_children;       /* List of child processes. */
+
+    /* Owned by vm/page.c. */
+    struct hash page_table;             /* Supplemental page table for VM. */
+    struct lock *page_table_lock;       /* Lock guarding the thread's SPT. */
 
     /* File system */
     struct file* exec_file;             /* The file that spawned this process*/

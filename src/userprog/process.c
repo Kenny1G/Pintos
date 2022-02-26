@@ -20,6 +20,7 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 #include "syscall.h"
 
 /* Processes acquire this lock when modifying their parent or children
@@ -601,6 +602,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
+
+  /* Test Swap: */
+  printf ("\n >> Swap test begins.\n");
+  uint8_t *swap_test = page_alloc (upage);
+  printf ("\n before: %d", *swap_test);
+  *swap_test = 7;
+  printf ("\n before 2: %d", *swap_test);
+  frame_evict (page_lookup (thread_current (), swap_test)->frame);
+  printf ("\n after: %d", *swap_test);
+  printf ("\n >> Swap test ended.\n");
+  /* End test swap. */
 
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 

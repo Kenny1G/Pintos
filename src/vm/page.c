@@ -1,6 +1,5 @@
-#include <stdio.h>
 #include "vm/page.h"
-#include "vm/frame.h"
+#include <stdio.h>
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "userprog/pagedir.h"
@@ -35,23 +34,35 @@ page_lookup (struct thread *t, void *address)
 {
   struct page p;
   struct hash_elem *e;
+  struct page *result;
 
   p.uaddr = address;
   e = hash_find (&t->page_table, &p.hash_elem);
-  return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
+  result = e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
+  return result;
 }
 
-/* Initializes the page_table hash table for a thread T. */
+/* Initializes the page_table hash table for a thread T.
+   Called in process.c/load before any memory allocation. */
 bool
 page_table_init (struct thread *t)
 {
-  return hash_init (&t->page_table, page_hash, page_less, NULL);
+  bool success;
+  
+  t->page_table_lock = malloc (sizeof (struct lock));
+  if (t->page_table_lock == NULL)
+    return false;
+  lock_init (t->page_table_lock);
+  lock_acquire (t->page_table_lock);
+  success = hash_init (&t->page_table, page_hash, page_less, NULL);
+  lock_release (t->page_table_lock);
+  return success;
 }
 
 /* Allocates a page with user address UADDR in the current thread's
    page_table. Invalidates the PTE for that page such that a future
    pagefault would load the page lazily. Returns NULL if the page is 
-   already mapped or UADDR on success. */
+   already mapped or UADDR on success. Thread-safe. */
 void *
 page_alloc (void *uaddr)
 {
@@ -61,24 +72,36 @@ page_alloc (void *uaddr)
 
   ASSERT (is_user_vaddr (uaddr));
 
+  lock_acquire (t->page_table_lock);
   /* Verify that there's not already a page at that virtual
      address, then create a new page. */
   p = page_lookup (t, paddr);
   if (p != NULL)  /* A page already exists with this address. */
-    return NULL;
+    {
+      uaddr = NULL;
+      goto done;
+    }
   p = malloc (sizeof (struct page));
   if (p == NULL)  /* Failed to allocate a page entry. */
-    return NULL;
+    {
+      uaddr = NULL;
+      goto done;
+    }
+  lock_init (&p->lock);
   p->uaddr = paddr;
+  p->thread = t;
   p->location = NEW;
+  p->frame = NULL;
   p->writable = true;
-  pagedir_set_present (t->pagedir, paddr, false);
+  pagedir_clear_page (t->pagedir, paddr);
   hash_insert (&t->page_table, &p->hash_elem);
+done:
+  lock_release (t->page_table_lock);
   return uaddr;
 }
 
-/* Sets the writable bit to WRITABLE for page at UADDR and
-   updates its PTE accordingly. */
+/* Sets the writable bit to WRITABLE for page at UADDR
+   in the curren thread and updates its PTE accordingly. */
 void
 page_set_writable (void *uaddr, bool writable)
 {
@@ -88,6 +111,7 @@ page_set_writable (void *uaddr, bool writable)
 
   ASSERT (is_user_vaddr (uaddr));
 
+  lock_acquire (t->page_table_lock);
   p = page_lookup (t, uaddr);
   if (p != NULL)
     {
@@ -97,6 +121,7 @@ page_set_writable (void *uaddr, bool writable)
       if (kpage != NULL)
         pagedir_set_writable (t->pagedir, upage, writable);
     }
+  lock_release (t->page_table_lock);
 }
 
 /* Removes a page from the current thread's page_table and
@@ -115,12 +140,84 @@ page_resolve_fault (void *fault_addr)
 {
   struct thread *t = thread_current ();
   struct page *page;
+  struct frame *frame;
 
   ASSERT (is_user_vaddr (fault_addr));
 
   page = page_lookup (t, pg_round_down (fault_addr));
-  if (page == NULL)  /* Fault address is not mapped. */
+  /* Fault address is not mapped. */
+  if (page == NULL) 
     return false;
-  return frame_alloc (t, page);
+  /* Page is already in a frame or is corrupted. */
+  if (page->location == FRAME || page->location == CORRUPTED)
+    return false;
+  /* Allocate a pinned frame to resolve the pagefault into. */
+  frame = frame_alloc ();
+  frame->page = page;
+  page->frame = frame;
+  /* Populate the frame with the appopriate data. */
+  switch (page->location)
+    {
+      case NEW:
+        /* NEW pages don't need to be populated with any data. */
+        printf ("\n>>> Paging in a NEW page\n.");
+        break;
+      case SWAP:
+        /* Swap-in the page data. */
+        printf ("\n>>> Paging in a SWAP page\n.");
+        if (!swap_in (frame, page->swap_slot))
+          {
+            /* Failing to swap-in a page means that we lost it forever. */
+            page->location = CORRUPTED;
+            frame_free (frame);
+            return false;
+          }
+        break;
+      /* TODO - add other cases (e.g. mmaped files). */
+      default:
+        PANIC ("Failed to page-in at address %p!", page->uaddr);
+    }
+  if (!pagedir_set_page (t->pagedir, page->uaddr, frame->kaddr, 
+                         page->writable))
+    {
+      frame_free (frame);
+      return false;
+    }
+  else
+    {
+      /* Successfully paged-in and can be unpinned. */
+      page->location = FRAME;
+      frame->pinned = false;
+      return true;
+    }
+}
+
+/* Evicts PAGE by swapping its frame out. PAGE need not belong
+   to the current thread and it's thread-safe. Returns true
+   when the page is no longer on memory or false on failure.
+   
+   TODO: implement other forms of eviction depending on the 
+         nature of PAGE (e.g. write to filesystem). */
+bool
+page_evict (struct page *page)
+{
+  bool success;
+
+  /* The page could be already evicted. */
+  if (page->location != FRAME)
+    return true;
+  /* Swap-out the page. */
+  lock_acquire (&page->lock);
+  page->swap_slot = swap_out (page->frame);
+  if (page->swap_slot != SWAP_ERROR)
+    {
+      pagedir_clear_page (page->thread->pagedir, page->uaddr);
+      page->location = SWAP;
+      success = true;
+    }
+  else
+    success = false;
+  lock_release (&page->lock);
+  return success;
 }
 
