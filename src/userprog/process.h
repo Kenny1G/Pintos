@@ -3,6 +3,7 @@
 
 #include "threads/thread.h"
 #include "threads/synch.h"
+#include "userprog/syscall.h"
 
 /* Struct and functions for process fd table*/
 struct process_fd
@@ -26,6 +27,22 @@ struct process_child
     struct list_elem elem;
     int32_t exit_code;
     struct semaphore exited;
+  };
+
+struct mmap_entry
+  {
+    mapid_t id;                 /* ID of mmap*/
+    struct list_elem list_elem; /* List element to place mmap in list */
+    struct file *file;          /* File backing mmap */
+    size_t file_size;           /* Size of above */
+    struct list mmap_pages;     /* List of pages mapped to this mmap */
+  };
+
+/* Wrapper struct for a page in an mmap*/
+struct mmap_page
+  {
+    struct list_elem list_elem; /* List element to put page in mmap_pages */
+    void* page_addr;            /* Virtual Address of page */
   };
 
 void process_init (void);

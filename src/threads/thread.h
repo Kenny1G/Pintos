@@ -6,6 +6,7 @@
 #include <hash.h>
 #include <stdint.h>
 #include <fixed-point.h>
+#include "userprog/syscall.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -126,6 +127,12 @@ struct thread
                                            descriptors*/
     int process_fd_next;                /* ID to be assigned to next fd */
 #endif
+
+#ifdef VM 
+    struct list mmap_list;              /* List of process' mmap files*/
+    mapid_t mmap_next_id;               /* Next availabnle mmap id */
+#endif
+
     int64_t wake_tick;                  /* Number of ticks left to sleep*/
     struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
     struct list_elem slept_elem;        /* List element for slept_threads list*/
