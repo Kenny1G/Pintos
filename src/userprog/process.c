@@ -728,3 +728,11 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
   success = stack_push(esp, &null_ptr, sizeof(void *));
   return success;
 }
+
+bool process_mmap_add_page (struct process_mmap_entry *mmap, void* uaddr, 
+                            unsigned offset)
+{
+}
+
+void process_mmap_remove_page (struct process_mmap_entry *mmap)
+{}

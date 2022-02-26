@@ -525,8 +525,62 @@ void syscall_close_helper (int fd)
 /* Maps the file open as fd into the process's virtual address space*/
 static void 
 syscall_mmap (struct intr_frame *f)
-{ 
-  return MAP_FAILED;
+{
+  int32_t fd = syscall_get_arg(f, 1);
+  void *addr = (void *) syscall_get_arg(f, 2);
+  struct thread *t = thread_current ();
+  f->eax = MAP_FAILED;
+
+  // Fail if addr is 0, addr is not page-aligned, or fd is 0 or 1
+  if (addr == 0 || pg_round_down (addr) != addr || fd == 0 || fd == 1)
+    return;
+
+  // Get file that will back mmap 
+  struct process_fd *process_fd = process_get_fd (t, fd);
+  if (process_fd == NULL)
+    return;
+  lock_acquire (&syscall_file_lock);
+  size_t file_size = file_length(process_fd->file);
+  lock_release (&syscall_file_lock);
+
+  // Fail if backing file has length 0
+  if (file_size == 0)
+    return;
+
+  // Create a new memory map
+  struct process_mmap_entry *mmap = malloc (sizeof (struct process_mmap_entry));
+  if (mmap == NULL)
+    return;
+  list_init (&mmap->mmap_pages);
+  mmap->file = file_reopen(process_fd->file); 
+  if (mmap->file == NULL)
+  {
+    free(mmap);
+    return;
+  }
+  mmap->file_size = file_size;
+  mmap->id = MAP_FAILED;
+
+  // Populate mmap's pages
+  size_t offset = 0;
+  while (offset < mmap->file_size)
+  {
+    bool success = process_mmap_add_page (mmap, addr + offset, offset);
+    if (!success)
+    {
+      process_mmap_remove_page (mmap);
+      return;
+    }
+    offset += PGSIZE;
+  }
+
+
+  // Associate mmap with thread
+  mmap->id = t->mmap_next_id++;
+  list_push_back (&t->mmap_list, &mmap->list_elem);
+
+  f->eax = mmap->id;
+  return;
 }
 
 /* Unmaps the mapping designated by mapping, which must be a mapping ID

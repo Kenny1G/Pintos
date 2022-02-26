@@ -45,6 +45,10 @@ struct process_mmap_page
     void* page_addr;            /* Virtual Address of page */
   };
 
+bool process_mmap_add_page (struct process_mmap_entry *mmap, void* uaddr,
+                      unsigned offset);
+void process_mmap_remove_page (struct process_mmap_entry *mmap);
+
 void process_init (void);
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
