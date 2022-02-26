@@ -100,7 +100,7 @@ static void syscall_seek (struct intr_frame *);
 static void syscall_tell (struct intr_frame *);
 static void syscall_close (struct intr_frame *);
 static void syscall_curmem (struct intr_frame *);
-static mapid_t syscall_mmap (struct intr_frame *);
+static void syscall_mmap (struct intr_frame *);
 static void syscall_munmap (struct intr_frame *);
 
 /* Initialize syscalls by registering dispatch functions for supported
@@ -523,7 +523,7 @@ void syscall_close_helper (int fd)
 }
 
 /* Maps the file open as fd into the process's virtual address space*/
-static mapid_t
+static void 
 syscall_mmap (struct intr_frame *f)
 { 
   return MAP_FAILED;
