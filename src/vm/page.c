@@ -404,6 +404,14 @@ page_evict (struct page *page)
               success = bytes_to_write == file_write(mmap->file,
                   page->frame->kaddr, bytes_to_write);
             }
+          else 
+            { 
+              /* Non-writable file backed pages should just be cleared and 
+               * re-fetched from file */
+              page->location = FILE;
+              success = true;
+            }
+          pagedir_clear_page (page->thread->pagedir, page->uaddr);
         } 
       else 
         {
