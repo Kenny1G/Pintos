@@ -339,7 +339,11 @@ page_resolve_fault (void *fault_addr)
   bool success;
   struct page *page;
 
-  ASSERT (is_user_vaddr (fault_addr));
+  if (!is_user_vaddr (fault_addr))
+  {
+    thread_current ()->process_exit_code = -1;
+    thread_exit ();
+  }
 
   page = page_lookup (fault_addr);
   /* Fault address is not mapped. */
