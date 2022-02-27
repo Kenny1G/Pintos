@@ -46,7 +46,7 @@ struct page_mmap
   };
 
 /* Wrapper struct for a page in an mmap*/
-struct page_mmap_wrapper 
+struct page_mmap_elem 
   {
     struct list_elem list_elem; /* List element to put page in mmap_pages */
     void* page_addr;            /* Virtual Address of page */

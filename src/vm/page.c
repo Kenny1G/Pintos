@@ -416,7 +416,7 @@ bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr,
   if (stick_out < PGSIZE)
     zero_bytes = PGSIZE - stick_out;
 
-  struct page_mmap_wrapper *page_wrapper = malloc (sizeof (struct page_mmap_wrapper));
+  struct page_mmap_elem *page_wrapper = malloc (sizeof (struct page_mmap_elem));
   if (page_wrapper == NULL)
     return false;
   page_wrapper->page_addr = uaddr;
@@ -452,9 +452,9 @@ void page_delete_mmap (struct page_mmap *mmap)
     {
       next_elem = list_next(curr_elem);
       
-      struct page_mmap_wrapper *page = list_entry(curr_elem,
-                                                  struct page_mmap_wrapper,
-                                                  list_elem);
+      struct page_mmap_elem *page = list_entry(curr_elem,
+                                               struct page_mmap_elem,
+                                               list_elem);
 
       struct page *pRet = page_lookup(page->page_addr);
       if (pRet == NULL)
