@@ -326,6 +326,7 @@ page_file_in (struct page *page)
 
   //Zero out zero bytes
   memset(page->frame->kaddr + bytes_read, 0, page->file_zero_bytes);
+  page->location = FRAME;
   return true;
 }
 
@@ -365,7 +366,7 @@ page_resolve_fault (void *fault_addr)
 bool
 page_evict (struct page *page)
 {
-  bool success;
+  bool success = false;
 
   lock_acquire (&page->lock);  
   /* The page could be already evicted. */
@@ -383,15 +384,24 @@ page_evict (struct page *page)
   /* Evict the page to swap. */
   if (page->location == FRAME)
     {
-      page->swap_slot = swap_out (page->frame);
-      if (page->swap_slot != SWAP_ERROR)
+      if (page->evict_to == FILE)
         {
-          pagedir_clear_page (page->thread->pagedir, page->uaddr);
-          page->location = SWAP;
-          success = true;
+          // write to file if dirty and mark as clean
+          // discard sticking out pages
+          success = false;
+        } 
+      else 
+        {
+          page->swap_slot = swap_out (page->frame);
+          if (page->swap_slot != SWAP_ERROR)
+          {
+            pagedir_clear_page (page->thread->pagedir, page->uaddr);
+            page->location = SWAP;
+            success = true;
+          } 
+          else 
+            success = false;
         }
-      else
-        success = false;
     }
 done:
   lock_release (&page->lock);
