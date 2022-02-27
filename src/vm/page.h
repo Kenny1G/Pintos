@@ -63,6 +63,7 @@ void page_unpin (void *uaddr);
 void page_set_writable (void *uaddr, bool writable);
 bool page_is_writable (struct page *page);
 bool page_resolve_fault (void *fault_addr);
+struct page_mmap *page_mmap_new (struct file* file, size_t file_size);
 bool page_add_to_mmap (struct page_mmap *mmap, void* uaddr, 
                        unsigned offset);
 void page_delete_mmap (struct page_mmap *mmap);

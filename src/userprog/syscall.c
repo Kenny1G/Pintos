@@ -553,18 +553,7 @@ syscall_mmap (struct intr_frame *f)
     return;
 
   // Create a new memory map
-  struct page_mmap *mmap = malloc (sizeof (struct page_mmap));
-  if (mmap == NULL)
-    return;
-  list_init (&mmap->mmap_pages);
-  mmap->file = file_reopen(process_fd->file);
-  if (mmap->file == NULL)
-    {
-      free(mmap);
-      return;
-    }
-  mmap->file_size = file_size;
-  mmap->id = MAP_FAILED;
+  struct page_mmap *mmap = page_mmap_new(process_fd->file, file_size);
 
   // Populate mmap's pages
   size_t offset = 0;

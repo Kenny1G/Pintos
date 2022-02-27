@@ -422,6 +422,26 @@ done:
   return success;
 }
 
+struct page_mmap*
+page_mmap_new (struct file* file, size_t file_size)
+{
+  // Create a new memory map
+  struct page_mmap *mmap = malloc (sizeof (struct page_mmap));
+  if (mmap == NULL)
+    return NULL;
+  list_init (&mmap->mmap_pages);
+  mmap->file = file_reopen(file);
+  if (mmap->file == NULL)
+    {
+      free(mmap);
+      return NULL;
+    }
+  mmap->file_size = file_size;
+  mmap->id = MAP_FAILED;
+
+  return mmap;
+}
+
 /* Allocate a page in user address UADDR and associate it with file backed
  * memory map MMAP */
 bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr, 
