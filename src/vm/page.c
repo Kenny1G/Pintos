@@ -483,6 +483,8 @@ void page_delete_mmap (struct page_mmap *mmap)
       page_free(page->page_addr);
       free(page);
     }
+
+  file_close(mmap->file);
   free (mmap);
 }
 

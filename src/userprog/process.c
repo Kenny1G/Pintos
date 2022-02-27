@@ -290,6 +290,18 @@ process_exit (void)
     }
   lock_release (&process_child_lock);
 
+  /* Free all mmaps */
+  struct list* mmap_list = &thread_current ()->mmap_list;
+  struct page_mmap *mmap_page;
+  size_t n_mmap = list_size (mmap_list);
+  struct list_elem *cur_mmap = list_begin (mmap_list);
+  for (size_t i = 0; i < n_mmap; ++i)
+    {
+      mmap_page = list_entry (cur_mmap, struct page_mmap, list_elem);
+      cur_mmap = list_remove (cur_mmap);
+      page_delete_mmap (mmap_page);
+    }
+
   /* Destroy the the thread's supplemental page directory. */
   page_table_destroy ();
 
