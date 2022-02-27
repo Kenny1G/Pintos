@@ -729,9 +729,44 @@ pass_args_to_stack(struct process_info *p_info, void **esp)
   return success;
 }
 
+/* Allocate a page in user address UADDR and associate it with file backed
+ * memory map MMAP */
 bool process_mmap_add_page (struct process_mmap_entry *mmap, void* uaddr, 
                             unsigned offset)
 {
+  struct thread *t = thread_current ();
+
+  // Check that address isn't already mapped to a page
+  struct page *pRet = page_lookup(t, uaddr);
+  if (pRet != NULL || pagedir_get_page(t->pagedir, uaddr))
+    return false;
+  // Get zero bytes of page
+  size_t zero_bytes = 0;
+  size_t stick_out = mmap->file_size - offset;
+
+  if (stick_out < PGSIZE)
+    zero_bytes = PGSIZE - stick_out;
+
+  struct process_mmap_page *page_wrapper = malloc (sizeof (struct process_mmap_page));
+  if (page_wrapper == NULL)
+    return false;
+  page_wrapper->page_addr = uaddr;
+
+  // Add page to page table
+  void *addr = page_alloc(uaddr);
+  pRet = page_lookup(t, addr);
+  if (pRet == NULL) 
+  {
+    free (page_wrapper);
+    return false;
+  }
+
+  pRet->location = FILE;
+  pRet->file_zero_bytes = zero_bytes;
+
+  // add page to mmap list of pages
+  list_push_back(&mmap->mmap_pages, &page_wrapper->list_elem);
+  return true;
 }
 
 /* Delete app and free all resources associated with it*/

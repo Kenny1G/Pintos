@@ -29,6 +29,7 @@ struct page
     bool writable;                /* RW vs RO. */
     struct frame *frame;
     size_t swap_slot;
+    size_t file_zero_bytes;       /* For MMAP: Number of bytes that stick out*/
   };
 
 bool page_table_init (struct thread *t);
