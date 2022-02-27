@@ -552,7 +552,7 @@ syscall_mmap (struct intr_frame *f)
     return;
 
   // Create a new memory map
-  struct process_mmap_entry *mmap = malloc (sizeof (struct process_mmap_entry));
+  struct page_mmap *mmap = malloc (sizeof (struct page_mmap));
   if (mmap == NULL)
     return;
   list_init (&mmap->mmap_pages);
@@ -569,10 +569,10 @@ syscall_mmap (struct intr_frame *f)
   size_t offset = 0;
   while (offset < mmap->file_size)
   {
-    bool success = process_mmap_add_page (mmap, addr + offset, offset);
+    bool success = page_add_to_mmap (mmap, addr + offset, offset);
     if (!success)
     {
-      process_mmap_delete (mmap);
+      page_delete_mmap (mmap);
       return;
     }
     offset += PGSIZE;
@@ -594,10 +594,10 @@ syscall_munmap (struct intr_frame *f)
 {
   mapid_t id = syscall_get_arg(f, 1);
 
-  struct process_mmap_entry *mmap = process_get_mmap (thread_current (), id);
+  struct page_mmap *mmap = page_get_mmap (thread_current (), id);
   if (mmap != NULL)
     {
       list_remove (&mmap->list_elem);
-      process_mmap_delete (mmap);
+      page_delete_mmap (mmap);
     }
 }

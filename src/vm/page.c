@@ -351,6 +351,90 @@ done:
   return success;
 }
 
+/* Allocate a page in user address UADDR and associate it with file backed
+ * memory map MMAP */
+bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr, 
+                            unsigned offset)
+{
+  struct thread *t = thread_current ();
+
+  // Check that address isn't already mapped to a page
+  struct page *pRet = page_lookup(uaddr);
+  if (pRet != NULL || pagedir_get_page(t->pagedir, uaddr))
+    return false;
+  // Get zero bytes of page
+  size_t zero_bytes = 0;
+  size_t stick_out = mmap->file_size - offset;
+
+  if (stick_out < PGSIZE)
+    zero_bytes = PGSIZE - stick_out;
+
+  struct page_mmap_wrapper *page_wrapper = malloc (sizeof (struct page_mmap_wrapper));
+  if (page_wrapper == NULL)
+    return false;
+  page_wrapper->page_addr = uaddr;
+
+  // Add page to page table
+  void *addr = page_alloc(uaddr);
+  pRet = page_lookup(addr);
+  if (pRet == NULL) 
+  {
+    free (page_wrapper);
+    return false;
+  }
+
+  pRet->location = FILE;
+  pRet->file_zero_bytes = zero_bytes;
+
+  // add page to mmap list of pages
+  list_push_back(&mmap->mmap_pages, &page_wrapper->list_elem);
+  return true;
+}
+
+/* Delete mmapp and free all resources associated with it*/
+void page_delete_mmap (struct page_mmap *mmap)
+{
+  struct list_elem *curr_elem = NULL;
+  struct list_elem *next_elem = NULL; 
+
+  for (curr_elem = list_begin (&mmap->mmap_pages); 
+       curr_elem != list_end (&mmap->mmap_pages);
+       curr_elem = next_elem)
+    {
+      next_elem = list_next(curr_elem);
+      
+      struct page_mmap_wrapper *page = list_entry(curr_elem,
+                                                  struct page_mmap_wrapper,
+                                                  list_elem);
+
+      struct page *pRet = page_lookup(page->page_addr);
+      if (pRet == NULL)
+        PANIC ("Error in mmap, missing page entry");
+      page_free(page->page_addr);
+      free(page);
+    }
+  free (mmap);
+}
+
+static bool
+page_mmap_equal (struct list_elem *elem, void *aux)
+{
+  struct page_mmap *mmap = list_entry(elem, 
+                                        struct page_mmap, list_elem);
+  return mmap->id == *(mapid_t *)aux;
+}
+
+struct page_mmap *page_get_mmap(struct thread *t, mapid_t id)
+{
+  struct list_elem *e;
+  if (!list_empty(&t->mmap_list))
+    {
+      e = list_find(&t->mmap_list, page_mmap_equal,
+                    &id);
+      return list_entry(e, struct page_mmap, list_elem);
+    }
+  return NULL;
+}
 /* Finds page with uaddr UADDR in the curren thread's page_table returning 
    the address of its struct page or NULL if not found. */
 static struct page *

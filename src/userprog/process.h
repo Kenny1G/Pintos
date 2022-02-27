@@ -29,28 +29,6 @@ struct process_child
     struct semaphore exited;
   };
 
-struct process_mmap_entry
-  {
-    mapid_t id;                 /* ID of mmap*/
-    struct list_elem list_elem; /* List element to place mmap in list */
-    struct file *file;          /* File backing mmap */
-    size_t file_size;           /* Size of above */
-    struct list mmap_pages;     /* List of pages mapped to this mmap */
-  };
-
-/* Wrapper struct for a page in an mmap*/
-struct process_mmap_page
-  {
-    struct list_elem list_elem; /* List element to put page in mmap_pages */
-    void* page_addr;            /* Virtual Address of page */
-  };
-
-bool process_mmap_add_page (struct process_mmap_entry *mmap, void* uaddr,
-                      unsigned offset);
-void process_mmap_delete (struct process_mmap_entry *mmap);
-struct process_mmap_entry *process_get_mmap (struct thread *t, mapid_t id);
-
-
 void process_init (void);
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
