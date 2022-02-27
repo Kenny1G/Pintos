@@ -15,6 +15,7 @@
 #include "devices/input.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/page.h"
 
 struct lock syscall_file_lock;  /*Lock to synchronize filesystem access*/
 
@@ -388,7 +389,9 @@ syscall_read (struct intr_frame *f)
       size_t bytes_read = 0;
       while (bytes_read < size) 
         {
+          page_pin (buffer);
           buffer[bytes_read] = input_getc ();
+          page_unpin (buffer);
           bytes_read++;
         }
       f->eax = bytes_read;
@@ -424,8 +427,9 @@ syscall_write (struct intr_frame *f)
       while (size > 0)
         {
           size -= stride = size > 256 ? 256 : size;
+          page_pin (buffer);
           putbuf(buffer, stride);
-
+          page_unpin (buffer);
           buffer += stride;
         }
     }

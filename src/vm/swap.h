@@ -21,5 +21,6 @@ struct swap_table
 void swap_init (void);
 size_t swap_out (void *frame);
 bool swap_in (void *frame, size_t slot_idx);
+void swap_free (size_t swap_slot);
 
 #endif /* vm/swap.h */

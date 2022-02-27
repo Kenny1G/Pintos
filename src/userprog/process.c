@@ -290,6 +290,9 @@ process_exit (void)
     }
   lock_release (&process_child_lock);
 
+  /* Destroy the the thread's supplemental page directory. */
+  page_table_destroy ();
+
   /* Allow writes to the exec file again */
   if (cur->exec_file != NULL)
   {
@@ -308,7 +311,6 @@ process_exit (void)
       e = list_next (e);
       syscall_close_helper (fd->id); 
     }
-
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -429,7 +431,7 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory and supplemntal page table. */
   t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL || !page_table_init (t)) 
+  if (t->pagedir == NULL || !page_table_init ()) 
     goto done;
   
   process_activate ();
@@ -603,17 +605,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  /* Test Swap: */
-  printf ("\n >> Swap test begins.\n");
-  uint8_t *swap_test = page_alloc (upage);
-  printf ("\n before: %d", *swap_test);
-  *swap_test = 7;
-  printf ("\n before 2: %d", *swap_test);
-  frame_evict (page_lookup (thread_current (), swap_test)->frame);
-  printf ("\n after: %d", *swap_test);
-  printf ("\n >> Swap test ended.\n");
-  /* End test swap. */
-
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
@@ -629,11 +620,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         return false;
 
       /* Load this page. */
+      page_pin (page);
       if (file_read (file, page, page_read_bytes) != (int) page_read_bytes)
         {
           page_free (page);
           return false; 
         }
+      page_unpin (page);
       memset (page + page_read_bytes, 0, page_zero_bytes);
       page_set_writable (page, writable);
       
@@ -655,7 +648,9 @@ setup_stack (void **esp)
   page = page_alloc (((uint8_t *) PHYS_BASE) - PGSIZE);
   if (page != NULL) 
     {
+      page_pin (page);
       memset (page, 0, PGSIZE);
+      page_unpin (page);
       *esp = PHYS_BASE;
       return true;
     }

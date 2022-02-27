@@ -28,16 +28,20 @@ struct page
     enum page_location location;  /* Where to load the page from. */
     bool writable;                /* RW vs RO. */
     struct frame *frame;
+    bool pinned;
     size_t swap_slot;
+    enum page_location evict_to;  /* Where to evict the frame (e.g. FILE). */
     size_t file_zero_bytes;       /* For MMAP: Number of bytes that stick out*/
   };
 
-bool page_table_init (struct thread *t);
+bool page_table_init (void);
+void page_table_destroy (void);
 void *page_alloc (void *uaddr);
 void page_free (void *uaddr);
 bool page_evict (struct page *page);
+void page_pin (void *uaddr);
+void page_unpin (void *uaddr);
 void page_set_writable (void *uaddr, bool writable);
 bool page_resolve_fault (void *fault_addr);
-struct page *page_lookup (struct thread *t, void *address);
 
 #endif /* vm/page.h */

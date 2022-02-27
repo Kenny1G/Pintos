@@ -158,6 +158,12 @@ page_fault (struct intr_frame *f)
       && fault_addr >= STACK_LIMIT)
     page_alloc (fault_addr);
 
+//   printf ("Page fault at %p: %s error %s page in %s context.\n",
+//           fault_addr,
+//           not_present ? "not present" : "rights violation",
+//           write ? "writing" : "reading",
+//           user ? "user" : "kernel");
+          
   /* Attempt to resolve pagefault with VM or kill otherwise. */
   if (!page_resolve_fault (fault_addr))
     kill (f);
