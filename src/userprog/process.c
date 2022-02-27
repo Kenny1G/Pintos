@@ -620,11 +620,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         return false;
 
       /* Load this page. */
+      page_pin (page);
       if (file_read (file, page, page_read_bytes) != (int) page_read_bytes)
         {
           page_free (page);
           return false; 
         }
+      page_unpin (page);
       memset (page + page_read_bytes, 0, page_zero_bytes);
       page_set_writable (page, writable);
       
@@ -646,7 +648,9 @@ setup_stack (void **esp)
   page = page_alloc (((uint8_t *) PHYS_BASE) - PGSIZE);
   if (page != NULL) 
     {
+      page_pin (page);
       memset (page, 0, PGSIZE);
+      page_unpin (page);
       *esp = PHYS_BASE;
       return true;
     }

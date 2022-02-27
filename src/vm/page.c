@@ -1,10 +1,14 @@
 #include "vm/page.h"
 #include <stdio.h>
+#include <string.h>
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "userprog/pagedir.h"
 
 static struct page *page_lookup (void *uaddr);
+static bool page_in (struct page *page);
+static void page_page_pin (struct page *page);
+static void page_page_unpin (struct page *page);
 static void page_page_free (struct page *p);
 static hash_less_func page_less;
 static hash_hash_func page_hash;
@@ -79,6 +83,7 @@ page_alloc (void *uaddr)
   p->evict_to = SWAP; /* TODO - modify to FILE for mmap. */
   p->frame = NULL;
   p->writable = true;
+  p->pinned = false;
   pagedir_clear_page (t->pagedir, paddr);
   hash_insert (&t->page_table, &p->hash_elem);
 done:
@@ -157,48 +162,113 @@ page_free (void *uaddr)
 
   lock_acquire (t->page_table_lock);
   p = page_lookup (uaddr);
+  if (p == NULL)
+    PANIC ("Freeing page at invalid memory!");
   page_page_free (p);
   lock_release (t->page_table_lock);
 }
 
-/* Attempts to resolve a pagefault on FAULT_ADDR by allocating
-   a frame for it. Returns true on success and false if
-   FAULT_ADDR is not a valid address in the first place. */
-bool 
-page_resolve_fault (void *fault_addr)
+/* Alias for page_page_pin (page_lookup (UADDR)). Thread-safe. */
+void 
+page_pin (void *uaddr)
+{  
+  struct page *page = page_lookup (uaddr);
+
+  if (page == NULL)
+    PANIC ("Pinning invalid page!");
+
+  lock_acquire (&page->lock);
+  page_page_pin (page);
+  lock_release (&page->lock);
+}
+
+/* Alias for page_page_unpin (page_lookup (UADDR)). Thread-safe. */
+void 
+page_unpin (void *uaddr)
+{
+  struct page *page = page_lookup (uaddr);
+
+  if (page == NULL)
+    PANIC ("Unpinning invalid page!");
+
+  lock_acquire (&page->lock);
+  page_page_unpin (page);
+  lock_release (&page->lock);
+}
+
+/* PAGE will never pagefault after this function call until
+   page_page_unpin (PAGE) is called.
+   Assumes PAGE->lock is acquired. */
+static void
+page_page_pin (struct page *page)
+{
+  ASSERT (lock_held_by_current_thread (&page->lock));
+  
+  page->pinned = true;
+  /* Make sure the page has a frame. */
+  if (page->location != FRAME && !page_in (page))
+    PANIC ("Failed to Page-in page before pinning it!");
+  /* Pin the frame if not already pinned. */
+  frame_pin (page->frame);
+}
+
+/* Cancels the effects of calling page_page_pin and makes PAGE
+   a candidate for eviction.
+   Assumes PAGE->lock is acquired. */
+static void
+page_page_unpin (struct page *page)
+{
+  ASSERT (lock_held_by_current_thread (&page->lock));
+  
+  page->pinned = false;
+  /* Unpin the frame associated with the page if it exists. */
+  if (page->location == FRAME)
+    frame_unpin (page->frame);
+}
+
+/* Returns true after placing PAGE in a frame and false on failure.
+   Assumes that PAGE->lock is acquired by the current thread to prevent
+   page eviction race conditions while loading the page. Page is pinned
+   by default. */
+static bool
+page_in (struct page *page)
 {
   struct thread *t = thread_current ();
-  struct page *page;
   struct frame *frame;
 
-  ASSERT (is_user_vaddr (fault_addr));
+  ASSERT (lock_held_by_current_thread (&page->lock));
 
-  page = page_lookup (pg_round_down (fault_addr));
-  /* Fault address is not mapped. */
-  if (page == NULL) 
-    return false;
-  /* Page is already in a frame or is corrupted. */
-  if (page->location == FRAME || page->location == CORRUPTED)
-    return false;
+  /* Return true if already paged in. */
+  if (page->location == FRAME)
+    return true;
   /* Allocate a pinned frame to resolve the pagefault into. */
   frame = frame_alloc ();
+  page->pinned = true;
   frame->page = page;
-  page->frame = frame;
+  page->frame = frame;  
+  /* Set the page to be writable until the data is fully loaded. */
+  if (!pagedir_set_page (t->pagedir, page->uaddr, frame->kaddr, 
+                         true))
+    {
+      frame_free (frame);
+      page->pinned = false;
+      return false;
+    }
   /* Populate the frame with the appopriate data. */
   switch (page->location)
     {
       case NEW:
-        /* NEW pages don't need to be populated with any data. */
-        printf ("\n>>> Paging in a NEW page.\n");
+        /* NEW pages are populated with 0xcc just for debugging. */
+        memset (frame->kaddr, 0xcc, PGSIZE);
         break;
       case SWAP:
         /* Swap-in the page data. */
-        printf ("\n>>> Paging in a SWAP page.\n");
         if (!swap_in (frame, page->swap_slot))
           {
             /* Failing to swap-in a page means that we lost it forever. */
             page->location = CORRUPTED;
             frame_free (frame);
+            page->pinned = false;
             return false;
           }
         break;
@@ -206,19 +276,37 @@ page_resolve_fault (void *fault_addr)
       default:
         PANIC ("Failed to page-in at address %p!", page->uaddr);
     }
-  if (!pagedir_set_page (t->pagedir, page->uaddr, frame->kaddr, 
-                         page->writable))
-    {
-      frame_free (frame);
-      return false;
-    }
-  else
-    {
-      /* Successfully paged-in and can be unpinned. */
-      page->location = FRAME;
-      frame->pinned = false;
-      return true;
-    }
+  page->location = FRAME;
+  /* Reset the original value of the writable bit. */
+  pagedir_set_writable (t->pagedir, page->uaddr, page->writable);
+  return true;
+}
+
+/* Attempts to resolve a pagefault on FAULT_ADDR by calling
+   page_in on its page. Returns true on success and false if
+   FAULT_ADDR is not a valid address in the first place. */
+bool 
+page_resolve_fault (void *fault_addr)
+{
+  bool success;
+  struct page *page;
+
+  ASSERT (is_user_vaddr (fault_addr));
+
+  page = page_lookup (fault_addr);
+  /* Fault address is not mapped. */
+  if (page == NULL) 
+    return false;
+  /* Page is already in a frame (can't be paged-in) or is corrupted. */
+  if (page->location == FRAME || page->location == CORRUPTED)
+    return false;
+  /* Page-in to a frame. */
+  lock_acquire (&page->lock);
+  success = page_in (page);
+  /* Unpin the page by default. */
+  page_page_unpin (page);
+  lock_release (&page->lock);
+  return success;
 }
 
 /* Evicts PAGE by swapping its frame out. PAGE need not belong
@@ -232,20 +320,33 @@ page_evict (struct page *page)
 {
   bool success;
 
+  lock_acquire (&page->lock);  
   /* The page could be already evicted. */
   if (page->location != FRAME)
-    return true;
-  /* Swap-out the page. */
-  lock_acquire (&page->lock);
-  page->swap_slot = swap_out (page->frame);
-  if (page->swap_slot != SWAP_ERROR)
     {
-      pagedir_clear_page (page->thread->pagedir, page->uaddr);
-      page->location = SWAP;
       success = true;
+      goto done;
     }
-  else
-    success = false;
+  /* Can't evict pinned pages. */
+  if (page->pinned)
+    {
+      success = false;
+      goto done;
+    }
+  /* Evict the page to swap. */
+  if (page->location == FRAME)
+    {
+      page->swap_slot = swap_out (page->frame);
+      if (page->swap_slot != SWAP_ERROR)
+        {
+          pagedir_clear_page (page->thread->pagedir, page->uaddr);
+          page->location = SWAP;
+          success = true;
+        }
+      else
+        success = false;
+    }
+done:
   lock_release (&page->lock);
   return success;
 }

@@ -22,6 +22,8 @@ struct frame
 
 void frame_init (void);
 struct frame *frame_alloc (void);
+void frame_pin (struct frame *frame);
+void frame_unpin (struct frame *frame);
 void frame_free (struct frame *frame);
 bool frame_evict (struct frame *frame);
 
