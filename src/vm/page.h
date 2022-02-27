@@ -36,6 +36,7 @@ struct page
     unsigned start_byte;          /* For MMAP: Page starting location in file */
   };
 
+/* Wrapper struct for a mmaped file */
 struct page_mmap 
   {
     mapid_t id;                 /* ID of mmap*/
