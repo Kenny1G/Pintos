@@ -559,25 +559,25 @@ syscall_mmap (struct intr_frame *f)
   list_init (&mmap->mmap_pages);
   mmap->file = file_reopen(process_fd->file);
   if (mmap->file == NULL)
-  {
-    free(mmap);
-    return;
-  }
+    {
+      free(mmap);
+      return;
+    }
   mmap->file_size = file_size;
   mmap->id = MAP_FAILED;
 
   // Populate mmap's pages
   size_t offset = 0;
   while (offset < mmap->file_size)
-  {
-    bool success = page_add_to_mmap (mmap, addr + offset, offset);
-    if (!success)
     {
-      page_delete_mmap (mmap);
-      return;
+      bool success = page_add_to_mmap (mmap, addr + offset, offset);
+      if (!success)
+        {
+          page_delete_mmap (mmap);
+          return;
+        }
+      offset += PGSIZE;
     }
-    offset += PGSIZE;
-  }
 
   // Associate mmap with thread
   mmap->id = t->mmap_next_id++;
