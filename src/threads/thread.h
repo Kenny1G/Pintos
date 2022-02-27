@@ -119,6 +119,10 @@ struct thread
     /* Owned by vm/page.c. */
     struct hash page_table;             /* Supplemental page table for VM. */
     struct lock *page_table_lock;       /* Lock guarding the thread's SPT. */
+    
+    /* VM */
+    struct list mmap_list;              /* List of process' mmap files*/
+    mapid_t mmap_next_id;               /* Next availabnle mmap id */
 
     /* File system */
     struct file* exec_file;             /* The file that spawned this process*/
@@ -126,11 +130,6 @@ struct thread
     struct list process_fd_table;       /* List of this process' file 
                                            descriptors*/
     int process_fd_next;                /* ID to be assigned to next fd */
-#endif
-
-#ifdef VM 
-    struct list mmap_list;              /* List of process' mmap files*/
-    mapid_t mmap_next_id;               /* Next availabnle mmap id */
 #endif
 
     int64_t wake_tick;                  /* Number of ticks left to sleep*/

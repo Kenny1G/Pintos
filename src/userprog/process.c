@@ -772,5 +772,46 @@ bool process_mmap_add_page (struct process_mmap_entry *mmap, void* uaddr,
 /* Delete app and free all resources associated with it*/
 void process_mmap_delete (struct process_mmap_entry *mmap)
 {
+  struct thread *t = thread_current ();
+
+  struct list_elem *curr_elem = NULL;
+  struct list_elem *next_elem = NULL; 
+
+  for (curr_elem = list_begin (&mmap->mmap_pages); 
+       curr_elem != list_end (&mmap->mmap_pages);
+       curr_elem = next_elem)
+    {
+      next_elem = list_next(curr_elem);
+      
+      struct process_mmap_page *page = list_entry(curr_elem,
+                                                  struct process_mmap_page,
+                                                  list_elem);
+
+      struct page *pRet = page_lookup(t, page->page_addr);
+      if (pRet == NULL)
+        PANIC ("Error in mmap, missing page entry");
+      page_free(page->page_addr);
+      free(page);
+    }
   free (mmap);
+}
+
+static bool
+process_elem_mmap_equal (struct list_elem *elem, void *aux)
+{
+  struct process_mmap_entry * mmap = list_entry(elem, 
+                                        struct process_mmap_entry, list_elem);
+  return mmap->id == *(mapid_t *)aux;
+}
+
+struct process_mmap_entry *process_get_mmap(struct thread *t, mapid_t id)
+{
+  struct list_elem *e;
+  if (!list_empty(&t->mmap_list))
+    {
+      e = list_find(&t->mmap_list, process_elem_mmap_equal,
+                    &id);
+      return list_entry(e, struct process_mmap_entry, list_elem);
+    }
+  return NULL;
 }

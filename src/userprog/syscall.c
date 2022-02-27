@@ -552,7 +552,7 @@ syscall_mmap (struct intr_frame *f)
   if (mmap == NULL)
     return;
   list_init (&mmap->mmap_pages);
-  mmap->file = file_reopen(process_fd->file); 
+  mmap->file = file_reopen(process_fd->file);
   if (mmap->file == NULL)
   {
     free(mmap);
@@ -574,7 +574,6 @@ syscall_mmap (struct intr_frame *f)
     offset += PGSIZE;
   }
 
-
   // Associate mmap with thread
   mmap->id = t->mmap_next_id++;
   list_push_back (&t->mmap_list, &mmap->list_elem);
@@ -589,4 +588,12 @@ syscall_mmap (struct intr_frame *f)
 static void 
 syscall_munmap (struct intr_frame *f)
 {
+  mapid_t id = syscall_get_arg(f, 1);
+
+  struct process_mmap_entry *mmap = process_get_mmap (thread_current (), id);
+  if (mmap != NULL)
+    {
+      list_remove (&mmap->list_elem);
+      process_mmap_delete (mmap);
+    }
 }
