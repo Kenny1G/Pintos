@@ -397,9 +397,8 @@ page_evict (struct page *page)
               struct page_mmap *mmap = page->mmap;
               file_seek(mmap->file, page->start_byte);
               off_t bytes_to_write = PGSIZE - page->file_zero_bytes;
-              success = bytes_to_write == file_write(mmap->file, page->frame->kaddr, 
-                  bytes_to_write);
-
+              success = bytes_to_write == file_write(mmap->file,
+                  page->frame->kaddr, bytes_to_write);
             }
         } 
       else 
