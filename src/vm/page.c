@@ -360,6 +360,9 @@ page_resolve_fault (void *fault_addr)
 /* Evicts PAGE by swapping its frame out. PAGE need not belong
    to the current thread and it's thread-safe. Returns true
    when the page is no longer on memory or false on failure.
+
+   Caller of this function is responsible for acquring the page lock
+   first
    
    TODO: implement other forms of eviction depending on the 
          nature of PAGE (e.g. write to filesystem). */
@@ -368,7 +371,7 @@ page_evict (struct page *page)
 {
   bool success = false;
 
-  lock_acquire (&page->lock);  
+  ASSERT(lock_held_by_current_thread (&page->lock));
   /* The page could be already evicted. */
   if (page->location != FRAME)
     {
@@ -413,7 +416,6 @@ page_evict (struct page *page)
         }
     }
 done:
-  lock_release (&page->lock);
   return success;
 }
 

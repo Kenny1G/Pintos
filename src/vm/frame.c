@@ -133,7 +133,10 @@ frame_evict (struct frame *frame)
   if (frame->pinned)
     return false;
   /* Evict page if it exists. */
-  if (frame->page != NULL && !page_evict (frame->page))
+  lock_acquire (&frame->page->lock);
+  bool bRet = page_evict (frame->page); 
+  lock_release (&frame->page->lock);
+  if (frame->page != NULL && !bRet)
     return false;
   frame->page = NULL;
   /* Remove the frame from list of allocated frames. */
