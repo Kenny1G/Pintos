@@ -734,5 +734,8 @@ bool process_mmap_add_page (struct process_mmap_entry *mmap, void* uaddr,
 {
 }
 
-void process_mmap_remove_page (struct process_mmap_entry *mmap)
-{}
+/* Delete app and free all resources associated with it*/
+void process_mmap_delete (struct process_mmap_entry *mmap)
+{
+  free (mmap);
+}
