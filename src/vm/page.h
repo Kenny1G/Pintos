@@ -32,6 +32,8 @@ struct page
     size_t swap_slot;
     enum page_location evict_to;  /* Where to evict the frame (e.g. FILE). */
     size_t file_zero_bytes;       /* For MMAP: Number of bytes that stick out*/
+    unsigned start_byte;          /* For MMAP: Page starting location in file */
+    struct page_mmap *mmap;       /* For MMAP: mmap corresponding to this page*/
   };
 
 struct page_mmap 

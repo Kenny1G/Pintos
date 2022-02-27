@@ -4,9 +4,11 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "userprog/pagedir.h"
+#include "filesys/file.h"
 
 static struct page *page_lookup (void *uaddr);
 static bool page_in (struct page *page);
+static bool page_file_in (struct page *page);
 static void page_page_pin (struct page *page);
 static void page_page_unpin (struct page *page);
 static void page_page_free (struct page *p);
@@ -84,6 +86,7 @@ page_alloc (void *uaddr)
   p->frame = NULL;
   p->writable = true;
   p->pinned = false;
+  p->mmap = NULL;
   pagedir_clear_page (t->pagedir, paddr);
   hash_insert (&t->page_table, &p->hash_elem);
 done:
@@ -272,6 +275,15 @@ page_in (struct page *page)
             return false;
           }
         break;
+      case FILE:
+        if (!page_file_in (page))
+          {
+            /*TODO (kenny): definitely need to do some more cleaning up*/
+            frame_free (frame);
+            page->pinned = false;
+            return false;
+          }
+        break;
       /* TODO - add other cases (e.g. mmaped files). */
       default:
         PANIC ("Failed to page-in at address %p!", page->uaddr);
@@ -279,6 +291,30 @@ page_in (struct page *page)
   page->location = FRAME;
   /* Reset the original value of the writable bit. */
   pagedir_set_writable (t->pagedir, page->uaddr, page->writable);
+  return true;
+}
+
+/* Reads data into mmapped PAGE from file backing it */
+static bool
+page_file_in (struct page *page)
+{
+  struct page_mmap *mmap = page->mmap;
+  if (mmap == NULL)
+    return false;
+
+  /*get file lock here*/
+  // Read data from mmap file
+  off_t old_cur = file_tell(mmap->file);
+  file_seek (mmap->file, page->start_byte);
+  off_t bytes_to_read = PGSIZE - page->file_zero_bytes;
+  off_t bytes_read = file_read (mmap->file, page->frame->kaddr, bytes_to_read);
+  file_seek (mmap->file, old_cur);
+
+  if (bytes_read != bytes_to_read) 
+    return false;
+
+  //Zero out zero bytes
+  memset(page->frame->kaddr + bytes_read, 0, page->file_zero_bytes);
   return true;
 }
 
@@ -385,6 +421,8 @@ bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr,
 
   pRet->location = FILE;
   pRet->file_zero_bytes = zero_bytes;
+  pRet->start_byte = offset;
+  pRet->mmap = mmap;
 
   // add page to mmap list of pages
   list_push_back(&mmap->mmap_pages, &page_wrapper->list_elem);
