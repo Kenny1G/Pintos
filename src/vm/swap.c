@@ -49,7 +49,7 @@ swap_out (void *frame_)
     return SWAP_ERROR;
   /* Loop over the frame and write it sector by sector to swap slot. */
   sector_begin = swap_slot * SECTORS_PER_PAGE;
-  for (sector_offs = 0; sector_offs < 1; sector_offs++)
+  for (sector_offs = 0; sector_offs < SECTORS_PER_PAGE; sector_offs++)
     block_write (st.block_device, sector_begin + sector_offs, 
                  ((uint8_t *) frame->kaddr) + sector_offs * BLOCK_SECTOR_SIZE);
   return swap_slot;

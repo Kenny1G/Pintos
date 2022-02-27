@@ -36,11 +36,13 @@ struct page
 bool page_table_init (void);
 void page_table_destroy (void);
 void *page_alloc (void *uaddr);
+struct page *page_lookup (void *uaddr);
 void page_free (void *uaddr);
 bool page_evict (struct page *page);
 void page_pin (void *uaddr);
 void page_unpin (void *uaddr);
 void page_set_writable (void *uaddr, bool writable);
+bool page_is_writable (struct page *page);
 bool page_resolve_fault (void *fault_addr);
 
 #endif /* vm/page.h */
