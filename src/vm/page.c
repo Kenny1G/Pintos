@@ -386,9 +386,18 @@ page_evict (struct page *page)
     {
       if (page->evict_to == FILE)
         {
-          // write to file if dirty and mark as clean
-          // discard sticking out pages
-          success = false;
+          if (page->writable && pagedir_is_dirty (page->thread->pagedir,
+                page->uaddr))
+            {
+              //TODO(kenny): synchronization
+              //Write page to fle
+              struct page_mmap *mmap = page->mmap;
+              file_seek(mmap->file, page->start_byte);
+              off_t bytes_to_write = PGSIZE - page->file_zero_bytes;
+              success = bytes_to_write == file_write(mmap->file, page->frame->kaddr, 
+                  bytes_to_write);
+
+            }
         } 
       else 
         {
@@ -441,6 +450,7 @@ bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr,
   }
 
   pRet->location = FILE;
+  pRet->evict_to = FILE;
   pRet->file_zero_bytes = zero_bytes;
   pRet->start_byte = offset;
   pRet->mmap = mmap;
