@@ -47,7 +47,7 @@ struct process_mmap_page
 
 bool process_mmap_add_page (struct process_mmap_entry *mmap, void* uaddr,
                       unsigned offset);
-void process_mmap_remove_page (struct process_mmap_entry *mmap);
+void process_mmap_delete (struct process_mmap_entry *mmap);
 
 void process_init (void);
 tid_t process_execute (const char *file_name);

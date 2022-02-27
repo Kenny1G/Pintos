@@ -568,7 +568,7 @@ syscall_mmap (struct intr_frame *f)
     bool success = process_mmap_add_page (mmap, addr + offset, offset);
     if (!success)
     {
-      process_mmap_remove_page (mmap);
+      process_mmap_delete (mmap);
       return;
     }
     offset += PGSIZE;
