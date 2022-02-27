@@ -445,7 +445,7 @@ page_mmap_new (struct file* file, size_t file_size)
 /* Allocate a page in user address UADDR and associate it with file backed
  * memory map MMAP */
 bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr, 
-                            unsigned offset)
+                      unsigned offset, size_t zero_bytes)
 {
   struct thread *t = thread_current ();
 
@@ -453,12 +453,6 @@ bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr,
   struct page *pRet = page_lookup(uaddr);
   if (pRet != NULL || pagedir_get_page(t->pagedir, uaddr))
     return false;
-  // Get zero bytes of page
-  size_t zero_bytes = 0;
-  size_t stick_out = mmap->file_size - offset;
-
-  if (stick_out < PGSIZE)
-    zero_bytes = PGSIZE - stick_out;
 
   struct page_mmap_elem *page_wrapper = malloc (sizeof (struct page_mmap_elem));
   if (page_wrapper == NULL)

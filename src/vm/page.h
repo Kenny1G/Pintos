@@ -65,7 +65,7 @@ bool page_is_writable (struct page *page);
 bool page_resolve_fault (void *fault_addr);
 struct page_mmap *page_mmap_new (struct file* file, size_t file_size);
 bool page_add_to_mmap (struct page_mmap *mmap, void* uaddr, 
-                       unsigned offset);
+                       unsigned offset, size_t zero_bytes);
 void page_delete_mmap (struct page_mmap *mmap);
 struct page_mmap *page_get_mmap (struct thread *t, mapid_t id);
 

@@ -559,7 +559,13 @@ syscall_mmap (struct intr_frame *f)
   size_t offset = 0;
   while (offset < mmap->file_size)
     {
-      bool success = page_add_to_mmap (mmap, addr + offset, offset);
+      // Get zero bytes of page
+      size_t zero_bytes = 0;
+      size_t stick_out = mmap->file_size - offset;
+
+      if (stick_out < PGSIZE)
+        zero_bytes = PGSIZE - stick_out;
+      bool success = page_add_to_mmap (mmap, addr + offset, offset, zero_bytes);
       if (!success)
         {
           page_delete_mmap (mmap);
