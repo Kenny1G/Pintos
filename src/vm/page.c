@@ -6,7 +6,6 @@
 #include "userprog/pagedir.h"
 #include "filesys/file.h"
 
-static struct page *page_lookup (void *uaddr);
 static bool page_in (struct page *page);
 static bool page_file_in (struct page *page);
 static void page_page_pin (struct page *page);
@@ -117,6 +116,18 @@ page_set_writable (void *uaddr, bool writable)
       lock_release (&p->lock);
     }
   lock_release (t->page_table_lock);
+}
+
+/* Returns the writable bit of PAGE. Thread-safe. */
+bool 
+page_is_writable (struct page *page)
+{
+  bool writable;
+
+  lock_acquire (&page->lock);
+  writable = page->writable;
+  lock_release (&page->lock);
+  return writable;
 }
 
 /* Removes the page P from the current thread's page_table and
@@ -475,7 +486,7 @@ struct page_mmap *page_get_mmap(struct thread *t, mapid_t id)
 }
 /* Finds page with uaddr UADDR in the curren thread's page_table returning 
    the address of its struct page or NULL if not found. */
-static struct page *
+struct page *
 page_lookup (void *uaddr)
 {
   struct thread *t = thread_current ();

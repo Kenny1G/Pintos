@@ -78,7 +78,7 @@ syscall_file_remove (const char *file_name)
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
-static void syscall_validate_user_memory (const void *uaddr, size_t size);
+static void syscall_validate_user_memory (const void *uaddr, size_t, bool);
 static void syscall_validate_user_string (const char *uaddr, size_t max_size);
 static void syscall_terminate_process (void);
 
@@ -174,9 +174,10 @@ syscall_terminate_process (void)
    UADDR. Otherwise, calls syscall_terminate_process and never returns.
    SIZE must be a positive value. */
 static void 
-syscall_validate_user_memory (const void *uaddr, size_t size)
+syscall_validate_user_memory (const void *uaddr, size_t size, bool writable)
 {
   const void *current_page;
+  struct page *p;
 
   ASSERT (thread_current ()->pagedir != NULL);
 
@@ -188,8 +189,8 @@ syscall_validate_user_memory (const void *uaddr, size_t size)
        current_page += PGSIZE)
     {
       if (!is_user_vaddr (current_page) 
-          || pagedir_get_page (thread_current ()->pagedir, 
-                               current_page) == NULL)
+          || (p = page_lookup ((void *) current_page)) == NULL
+          || (writable && !page_is_writable (p)))
           syscall_terminate_process ();
     } 
 }
@@ -208,7 +209,7 @@ syscall_validate_user_string (const char *uaddr, size_t max_size)
 
   for (; caddr != uaddr + max_size + 1; ++caddr)
     {
-      syscall_validate_user_memory (caddr, sizeof (char));
+      syscall_validate_user_memory (caddr, sizeof (char), false);
       if (*caddr == '\0')
         break;
     }
@@ -222,7 +223,7 @@ static uint32_t
 syscall_get_arg (struct intr_frame *f, size_t idx)
 {
   uint32_t *arg = (uint32_t *)(f->esp) + idx;
-  syscall_validate_user_memory (arg, sizeof (uint32_t));
+  syscall_validate_user_memory (arg, sizeof (uint32_t), false);
   return *arg;
 }
 
@@ -380,8 +381,8 @@ syscall_read (struct intr_frame *f)
   int32_t fd = syscall_get_arg (f, 1);
   char *buffer = (char *) syscall_get_arg (f, 2);
   uint32_t size = syscall_get_arg (f, 3);
-  /* Verify that the entire buffer is valid user memory. */
-  syscall_validate_user_memory (buffer, size);
+  /* Verify that the entire buffer is valid user memory that's writable. */
+  syscall_validate_user_memory (buffer, size, true);
   
   if (fd == 0)
     {

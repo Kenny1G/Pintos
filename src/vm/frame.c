@@ -91,7 +91,7 @@ frame_alloc (void)
 
   lock_acquire (&frame_table_lock);
   if (!list_empty (&ft.free_frames))
-    frame = list_entry (list_pop_front (&ft.free_frames), struct frame, elem);
+    frame = list_entry (list_pop_back (&ft.free_frames), struct frame, elem);
   else
     frame = frame_pick_and_evict ();
   frame->pinned = true;
