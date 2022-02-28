@@ -197,12 +197,14 @@ start_process (void *process_info)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
+  lock_acquire (&syscall_file_lock);
   /* Open the file and prevent writes */
   struct file* file = filesys_open (p_info->program_name);
   if (file != NULL) file_deny_write (file);
 
   success = load (p_info, &if_.eip, &if_.esp);
   sema_up (&p_info->loaded);
+  lock_release (&syscall_file_lock);
 
   /* If load failed, quit. */
   if (!success) 
@@ -310,7 +312,9 @@ process_exit (void)
   if (cur->exec_file != NULL)
   {
     file_allow_write (cur->exec_file);
+    lock_acquire (&syscall_file_lock);
     file_close (cur->exec_file);
+    lock_release  (&syscall_file_lock);
   }
 
   /* Close open file descriptors */
@@ -472,9 +476,7 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
 
   /* Create mmap for executable file*/
   // TODO(kenny): synchronize
-  lock_acquire (&syscall_file_lock);
   size_t file_size = file_length(file);
-  lock_release (&syscall_file_lock);
   struct page_mmap *mmap = page_mmap_new(file,file_size);
 
   /* Read program headers. */

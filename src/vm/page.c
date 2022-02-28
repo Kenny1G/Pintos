@@ -438,6 +438,7 @@ done:
   return success;
 }
 
+/* This function assumes the lock for the file as already been acquired*/
 struct page_mmap*
 page_mmap_new (struct file* file, size_t file_size)
 {
@@ -446,9 +447,7 @@ page_mmap_new (struct file* file, size_t file_size)
   if (mmap == NULL)
     return NULL;
   list_init (&mmap->mmap_pages);
-  lock_acquire (&syscall_file_lock);
   mmap->file = file_reopen(file);
-  lock_release (&syscall_file_lock);
   if (mmap->file == NULL)
     {
       free(mmap);

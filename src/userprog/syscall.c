@@ -425,15 +425,16 @@ syscall_write (struct intr_frame *f)
   /* Verify that the entire buffer is valid user memory. */
   syscall_validate_user_string (buffer, size);
  
+  uint8_t * buff = (uint8_t *) buffer;
   if (fd == 1)
     {
        /* For FD==1, print to the console strides of the buffer. */
       while (size > 0)
         {
           size -= stride = size > 256 ? 256 : size;
-          page_pin (buffer);
+          page_pin (buff);
           putbuf(buffer, stride);
-          page_unpin (buffer);
+          page_unpin (buff);
           buffer += stride;
         }
     }
@@ -446,10 +447,15 @@ syscall_write (struct intr_frame *f)
           f->eax = -1;
           return;
         }
-      
+      for (uint8_t *cpage = pg_round_down (buff); cpage <= buff + size; cpage += PGSIZE)
+        page_pin (cpage);
+
       lock_acquire(&syscall_file_lock);
       f->eax = file_write(process_fd->file, buffer, size);
       lock_release(&syscall_file_lock);
+
+      for (uint8_t *cpage = pg_round_down (buff); cpage <= buff+ size; cpage += PGSIZE)
+        page_unpin (cpage);
     }
 }
 
@@ -549,14 +555,17 @@ syscall_mmap (struct intr_frame *f)
     return;
   lock_acquire (&syscall_file_lock);
   size_t file_size = file_length(process_fd->file);
-  lock_release (&syscall_file_lock);
 
   // Fail if backing file has length 0
   if (file_size == 0)
-    return;
+    {
+      lock_release (&syscall_file_lock);
+      return;
+    }
 
   // Create a new memory map
   struct page_mmap *mmap = page_mmap_new(process_fd->file, file_size);
+  lock_release (&syscall_file_lock);
 
   // Populate mmap's pages
   size_t offset = 0;
