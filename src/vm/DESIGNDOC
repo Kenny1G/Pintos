@@ -57,11 +57,32 @@ Kenny Oseleononmen <kenny1g@stanford.edu>
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+/* Hand of the clock algorithm */
+static struct list_elem *clock_hand;
+This static variable will be used to keep track of the clock hand in the list 
+of allocated frames.
 
 ---- ALGORITHMS ----
 
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
+When choosing a frame to be evicted, we use the Clock Algorithm,
+which effectively approximates the LRU page.
+
+The algorithm begins advancing the clock hand to the first unpinned frame. 
+If no frames are unpinned, it causes the kernel to PANIC. 
+Once it has found the first unpinned frame, it continues to loop through the 
+list of allocated frames until it finds a frame whose page's accessed bit is 0. 
+As it searches, it sets all frames whose page's accessed bit is 1 to 0, so that
+if all unpinned frames have been recently access, it will loop around and set 
+that first unpinned frame that was checked to be the one to be evicted.
+
+In the eviction function, we free the page associated with the frame to be 
+evicted, advance the clock hand, and remove the evicted frame from the list of 
+allocated frames.
+
+Finally we return the frame as the one to be allocated, pin it, and put it back
+on the list of allocated frames.
 
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
