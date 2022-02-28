@@ -323,7 +323,7 @@ page_file_in (struct page *page)
   off_t bytes_to_read = PGSIZE - page->file_zero_bytes;
   off_t bytes_read = 0; 
   if (bytes_to_read)
-    bytes_read = file_read (mmap->file, page->uaddr, bytes_to_read);
+    bytes_read = file_read (mmap->file, page->frame->kaddr, bytes_to_read);
   file_seek (mmap->file, old_cur);
   lock_release (&syscall_file_lock);
 
@@ -331,7 +331,7 @@ page_file_in (struct page *page)
     return false;
 
   //Zero out zero bytes
-  memset(page->uaddr + bytes_read, 0, page->file_zero_bytes);
+  memset(page->frame->kaddr + bytes_read, 0, page->file_zero_bytes);
   page->location = FRAME;
   return true;
 }
