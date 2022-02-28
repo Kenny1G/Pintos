@@ -536,6 +536,8 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
         }
     }
 
+  mmap->id = thread_current ()->mmap_next_id++;
+  list_push_back (&thread_current ()->mmap_list, &mmap->list_elem);
   /* Set up stack. */
   if (!setup_stack (esp))
     goto done;
@@ -672,8 +674,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       if (writable)
         page->evict_to = SWAP;
       page_set_writable (upage, writable);
-      mmap->id = thread_current ()->mmap_next_id++;
-      list_push_back (&thread_current ()->mmap_list, &mmap->list_elem);
 
       /* Advance. */
       read_bytes -= page_read_bytes;
