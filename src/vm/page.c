@@ -3,9 +3,11 @@
 #include <string.h>
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 #include "userprog/pagedir.h"
 #include "filesys/file.h"
 
+extern struct lock syscall_file_lock;
 static bool page_in (struct page *page);
 static bool page_file_in (struct page *page);
 static void page_page_pin (struct page *page);
@@ -316,12 +318,14 @@ page_file_in (struct page *page)
   /*get file lock here*/
   // Read data from mmap file
   off_t old_cur = file_tell(mmap->file);
+  lock_acquire (&syscall_file_lock);
   file_seek (mmap->file, page->start_byte);
   off_t bytes_to_read = PGSIZE - page->file_zero_bytes;
   off_t bytes_read = 0; 
   if (bytes_to_read)
     bytes_read = file_read (mmap->file, page->frame->kaddr, bytes_to_read);
   file_seek (mmap->file, old_cur);
+  lock_release (&syscall_file_lock);
 
   if (bytes_read != bytes_to_read) 
     return false;
@@ -400,11 +404,13 @@ page_evict (struct page *page)
             {
               //TODO(kenny): synchronization
               //Write page to fle
+              lock_acquire (&syscall_file_lock);
               struct page_mmap *mmap = page->mmap;
               file_seek(mmap->file, page->start_byte);
               off_t bytes_to_write = PGSIZE - page->file_zero_bytes;
               success = bytes_to_write == file_write(mmap->file,
                   page->frame->kaddr, bytes_to_write);
+              lock_release (&syscall_file_lock);
             }
           else 
             { 
@@ -440,7 +446,9 @@ page_mmap_new (struct file* file, size_t file_size)
   if (mmap == NULL)
     return NULL;
   list_init (&mmap->mmap_pages);
+  lock_acquire (&syscall_file_lock);
   mmap->file = file_reopen(file);
+  lock_release (&syscall_file_lock);
   if (mmap->file == NULL)
     {
       free(mmap);
@@ -512,7 +520,9 @@ void page_delete_mmap (struct page_mmap *mmap)
       free(page);
     }
 
+  lock_acquire (&syscall_file_lock);
   file_close(mmap->file);
+  lock_release (&syscall_file_lock);
   free (mmap);
 }
 
