@@ -21,7 +21,7 @@ enum page_location
 /* A page in a threads page_table. */
 struct page
   {
-    struct hash_elem hash_elem;   /* In thread's page_table hash table. */ 
+    struct hash_elem hash_elem;   /* In thread's page_table hash table. */
     struct lock lock;
     struct thread *thread;
     void *uaddr;                  /* User virtual address, page_table key. */
@@ -37,7 +37,7 @@ struct page
   };
 
 /* Wrapper struct for a mmaped file */
-struct page_mmap 
+struct page_mmap
   {
     mapid_t id;                 /* ID of mmap*/
     struct list_elem list_elem; /* List element to place mmap in list */
@@ -47,7 +47,7 @@ struct page_mmap
   };
 
 /* Wrapper struct for a page in an mmap*/
-struct page_mmap_elem 
+struct page_mmap_elem
   {
     struct list_elem list_elem; /* List element to put page in mmap_pages */
     void* page_addr;            /* Virtual Address of page */
@@ -65,7 +65,7 @@ void page_set_writable (void *uaddr, bool writable);
 bool page_is_writable (struct page *page);
 bool page_resolve_fault (void *fault_addr);
 struct page_mmap *page_mmap_new (struct file* file, size_t file_size);
-bool page_add_to_mmap (struct page_mmap *mmap, void* uaddr, 
+bool page_add_to_mmap (struct page_mmap *mmap, void* uaddr,
                        unsigned offset, size_t zero_bytes);
 void page_delete_mmap (struct page_mmap *mmap);
 struct page_mmap *page_get_mmap (struct thread *t, mapid_t id);

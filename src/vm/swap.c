@@ -12,7 +12,7 @@ static struct swap_table st;
 /* Lock guarding the swap table allocations and frees. */
 static struct lock swap_table_lock;
 
-/* Initializes the swap table st by loading its block device 
+/* Initializes the swap table st by loading its block device
    and creating its allocation bitmap. */
 void
 swap_init (void)
@@ -31,7 +31,7 @@ swap_init (void)
   lock_release (&swap_table_lock);
 }
 
-/* Stores the page in FRAME from memory into the first available 
+/* Stores the page in FRAME from memory into the first available
    swap slot in the swap block device and returns its index. Returns
    SWAP_ERROR when no swap slots are available. */
 size_t
@@ -50,7 +50,7 @@ swap_out (void *frame_)
   /* Loop over the frame and write it sector by sector to swap slot. */
   sector_begin = swap_slot * SECTORS_PER_PAGE;
   for (sector_offs = 0; sector_offs < SECTORS_PER_PAGE; sector_offs++)
-    block_write (st.block_device, sector_begin + sector_offs, 
+    block_write (st.block_device, sector_begin + sector_offs,
                  ((uint8_t *) frame->kaddr) + sector_offs * BLOCK_SECTOR_SIZE);
   return swap_slot;
 }
@@ -69,7 +69,7 @@ swap_in (void *frame_, size_t swap_slot)
   /* Read the swap slot sector by sector to the frame. */
   sector_begin = swap_slot * SECTORS_PER_PAGE;
   for (sector_offs = 0; sector_offs < SECTORS_PER_PAGE; sector_offs++)
-    block_read (st.block_device, sector_begin + sector_offs, 
+    block_read (st.block_device, sector_begin + sector_offs,
                 ((uint8_t *) frame->kaddr) + sector_offs * BLOCK_SECTOR_SIZE);
   /* Free up the swap slot. */
   bitmap_reset (st.allocated_slots, swap_slot);

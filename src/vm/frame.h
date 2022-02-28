@@ -5,7 +5,7 @@
 #include "vm/page.h"
 
 /* Keeps track of free and allocated frames in the system. */
-struct frame_table 
+struct frame_table
   {
     struct list free_frames;      /* Available for allocation. */
     struct list allocated_frames; /* Candidates for eviction. */

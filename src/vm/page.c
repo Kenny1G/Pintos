@@ -24,7 +24,7 @@ page_table_init (void)
 {
   struct thread *t = thread_current ();
   bool success;
-  
+
   t->page_table_lock = malloc (sizeof (struct lock));
   if (t->page_table_lock == NULL)
     return false;
@@ -53,7 +53,7 @@ page_table_destroy (void)
 
 /* Allocates a page with user address UADDR in the current thread's
    page_table. Invalidates the PTE for that page such that a future
-   pagefault would load the page lazily. Returns NULL if the page is 
+   pagefault would load the page lazily. Returns NULL if the page is
    already mapped or UADDR on success. Thread-safe. */
 void *
 page_alloc (void *uaddr)
@@ -121,7 +121,7 @@ page_set_writable (void *uaddr, bool writable)
 }
 
 /* Returns the writable bit of PAGE. Thread-safe. */
-bool 
+bool
 page_is_writable (struct page *page)
 {
   bool writable;
@@ -138,7 +138,7 @@ static void
 page_page_free (struct page *p)
 {
   struct thread *t = thread_current ();
-  
+
   lock_acquire (&p->lock);
   if (p != NULL)
     {
@@ -184,9 +184,9 @@ page_free (void *uaddr)
 }
 
 /* Alias for page_page_pin (page_lookup (UADDR)). Thread-safe. */
-void 
+void
 page_pin (void *uaddr)
-{  
+{
   struct page *page = page_lookup (uaddr);
 
   if (page == NULL)
@@ -198,7 +198,7 @@ page_pin (void *uaddr)
 }
 
 /* Alias for page_page_unpin (page_lookup (UADDR)). Thread-safe. */
-void 
+void
 page_unpin (void *uaddr)
 {
   struct page *page = page_lookup (uaddr);
@@ -218,7 +218,7 @@ static void
 page_page_pin (struct page *page)
 {
   ASSERT (lock_held_by_current_thread (&page->lock));
-  
+
   page->pinned = true;
   /* Make sure the page has a frame. */
   if (page->location != FRAME && !page_in (page))
@@ -234,7 +234,7 @@ static void
 page_page_unpin (struct page *page)
 {
   ASSERT (lock_held_by_current_thread (&page->lock));
-  
+
   page->pinned = false;
   /* Unpin the frame associated with the page if it exists. */
   if (page->location == FRAME)
@@ -260,9 +260,9 @@ page_in (struct page *page)
   frame = frame_alloc ();
   page->pinned = true;
   frame->page = page;
-  page->frame = frame;  
+  page->frame = frame;
   /* Set the page to be writable until the data is fully loaded. */
-  if (!pagedir_set_page (t->pagedir, page->uaddr, frame->kaddr, 
+  if (!pagedir_set_page (t->pagedir, page->uaddr, frame->kaddr,
                          true))
     {
       frame_free (frame);
@@ -315,13 +315,13 @@ page_file_in (struct page *page)
   lock_acquire (&syscall_file_lock);
   file_seek (mmap->file, page->start_byte);
   off_t bytes_to_read = PGSIZE - page->file_zero_bytes;
-  off_t bytes_read = 0; 
+  off_t bytes_read = 0;
   if (bytes_to_read)
     bytes_read = file_read (mmap->file, page->frame->kaddr, bytes_to_read);
   file_seek (mmap->file, old_cur);
   lock_release (&syscall_file_lock);
 
-  if (bytes_read != bytes_to_read) 
+  if (bytes_read != bytes_to_read)
     return false;
 
   //Zero out zero bytes
@@ -333,21 +333,21 @@ page_file_in (struct page *page)
 /* Attempts to resolve a pagefault on FAULT_ADDR by calling
    page_in on its page. Returns true on success and false if
    FAULT_ADDR is not a valid address in the first place. */
-bool 
+bool
 page_resolve_fault (void *fault_addr)
 {
   bool success;
   struct page *page;
 
   if (!is_user_vaddr (fault_addr))
-  {
-    thread_current ()->process_exit_code = -1;
-    thread_exit ();
-  }
+    {
+      thread_current ()->process_exit_code = -1;
+      thread_exit ();
+    }
 
   page = page_lookup (fault_addr);
   /* Fault address is not mapped. */
-  if (page == NULL) 
+  if (page == NULL)
     return false;
   /* Page is already in a frame (can't be paged-in) or is corrupted. */
   if (page->location == FRAME || page->location == CORRUPTED)
@@ -404,16 +404,16 @@ page_evict (struct page *page)
                   page->frame->kaddr, bytes_to_write);
               lock_release (&syscall_file_lock);
             }
-          else 
-            { 
-              /* Non-writable file backed pages should just be cleared and 
+          else
+            {
+              /* Non-writable file backed pages should just be cleared and
                * re-fetched from file */
               page->location = FILE;
               success = true;
             }
           pagedir_clear_page (page->thread->pagedir, page->uaddr);
-        } 
-      else 
+        }
+      else
         {
           page->swap_slot = swap_out (page->frame);
           if (page->swap_slot != SWAP_ERROR)
@@ -421,8 +421,8 @@ page_evict (struct page *page)
             pagedir_clear_page (page->thread->pagedir, page->uaddr);
             page->location = SWAP;
             success = true;
-          } 
-          else 
+          }
+          else
             success = false;
         }
     }
@@ -453,7 +453,7 @@ page_mmap_new (struct file* file, size_t file_size)
 
 /* Allocate a page in user address UADDR and associate it with file backed
  * memory map MMAP */
-bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr, 
+bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr,
                       unsigned offset, size_t zero_bytes)
 {
   struct thread *t = thread_current ();
@@ -471,11 +471,11 @@ bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr,
   // Add page to page table
   void *addr = page_alloc(uaddr);
   pRet = page_lookup(addr);
-  if (pRet == NULL) 
-  {
-    free (page_wrapper);
-    return false;
-  }
+  if (pRet == NULL)
+    {
+      free (page_wrapper);
+      return false;
+    }
 
   pRet->location = FILE;
   pRet->evict_to = FILE;
@@ -492,14 +492,14 @@ bool page_add_to_mmap(struct page_mmap *mmap, void* uaddr,
 void page_delete_mmap (struct page_mmap *mmap)
 {
   struct list_elem *curr_elem = NULL;
-  struct list_elem *next_elem = NULL; 
+  struct list_elem *next_elem = NULL;
 
-  for (curr_elem = list_begin (&mmap->mmap_pages); 
+  for (curr_elem = list_begin (&mmap->mmap_pages);
        curr_elem != list_end (&mmap->mmap_pages);
        curr_elem = next_elem)
     {
       next_elem = list_next(curr_elem);
-      
+
       struct page_mmap_elem *page = list_entry(curr_elem,
                                                struct page_mmap_elem,
                                                list_elem);
@@ -520,7 +520,7 @@ void page_delete_mmap (struct page_mmap *mmap)
 static bool
 page_mmap_equal (struct list_elem *elem, void *aux)
 {
-  struct page_mmap *mmap = list_entry(elem, 
+  struct page_mmap *mmap = list_entry(elem,
                                         struct page_mmap, list_elem);
   return mmap->id == *(mapid_t *)aux;
 }
@@ -536,7 +536,7 @@ struct page_mmap *page_get_mmap(struct thread *t, mapid_t id)
     }
   return NULL;
 }
-/* Finds page with uaddr UADDR in the curren thread's page_table returning 
+/* Finds page with uaddr UADDR in the curren thread's page_table returning
    the address of its struct page or NULL if not found. */
 struct page *
 page_lookup (void *uaddr)
@@ -553,7 +553,7 @@ page_lookup (void *uaddr)
 }
 
 /* Hash function that hashes a page's uaddr into its page_table hash table. */
-static unsigned 
+static unsigned
 page_hash (const struct hash_elem *e, void *aux UNUSED)
 {
   const struct page *p = hash_entry (e, struct page, hash_elem);
@@ -561,7 +561,7 @@ page_hash (const struct hash_elem *e, void *aux UNUSED)
 }
 
 /* Hash comparison function necessary to use page_table as a hash table. */
-static bool 
+static bool
 page_less (const struct hash_elem *a_,
            const struct hash_elem *b_,
            void *aux UNUSED)
@@ -571,7 +571,7 @@ page_less (const struct hash_elem *a_,
   return a->uaddr < b->uaddr;
 }
 
-/* Helper function that calls page_page_free on a hash 
+/* Helper function that calls page_page_free on a hash
    element. Useful when destroying the hash table. */
 static void
 hash_page_free (struct hash_elem *e, void *aux UNUSED)

@@ -15,9 +15,9 @@ static struct list_elem *clock_hand;
 
 static struct frame *frame_pick_and_evict (void);
 
-/* Frees up FRAME for future use. Does not evict the data in 
+/* Frees up FRAME for future use. Does not evict the data in
    FRAME. */
-void 
+void
 frame_free (struct frame *frame)
 {
   lock_acquire (&frame_table_lock);
@@ -86,12 +86,12 @@ frame_pick_and_evict (void)
     {
       frame = list_entry (clock_next (), struct frame, elem);
       /* Panic if unable to evict any frames, i.e. OOM. */
-      if (frame == clock_start) 
+      if (frame == clock_start)
         PANIC ("Attempting to evict a frame but all frames are pinned!");
     }
   do {
     /* Find LRU unpinned frame */
-    if (!frame->pinned) 
+    if (!frame->pinned)
       {
         if (pagedir_is_accessed (frame->page->thread->pagedir,
                              frame->page->uaddr))
@@ -149,7 +149,7 @@ frame_unpin (struct frame *frame)
   lock_release (&frame_table_lock);
 }
 
-/* Evicts FRAME by calling page_evict on its page if it exists. 
+/* Evicts FRAME by calling page_evict on its page if it exists.
    It also removes the frame from the list of allocated frames.
    Returns false if FRAME is pinned or page_evict fails and
    true otherwise. Assumes frame_table_lock is acquired. */
@@ -157,7 +157,7 @@ bool
 frame_evict (struct frame *frame)
 {
   ASSERT (lock_held_by_current_thread (&frame_table_lock));
-  
+
   /* Will not evict a pinned frame. */
   if (frame->pinned)
     return false;
