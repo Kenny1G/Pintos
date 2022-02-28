@@ -115,7 +115,7 @@ struct page
     Constant returned when a swap operation fails (e.g. when the swap device fails).
 -----
 
-TODO : add more structures for mmap?
+See mmap section for more structures
 
 ---- ALGORITHMS ----
 
@@ -139,7 +139,8 @@ lock before accessing/modifying the page's members.
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
 
-TODO : answer A3 (clock algorithm)
+We avoid the issue by only looking at the user address when evicting a page.
+That is when the dirty bit matters.
 
 ---- SYNCHRONIZATION ----
 
@@ -224,8 +225,6 @@ allocated frames.
 
 Finally we return the frame as the one to be allocated, pin it, and put it back
 on the list of allocated frames.
-
-TODO : answer B2 (clock algorithm)
 
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
