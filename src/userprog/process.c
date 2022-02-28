@@ -26,6 +26,7 @@
 /* Processes acquire this lock when modifying their parent or children
  to prevent race conditions when multiple processes exit at the same time. */
 static struct lock process_child_lock;
+extern struct lock syscall_file_lock;
 
 /* Used to pass info concerning the process' name and arguments from
    process_execute() to start_process() to load(). Also holds a
@@ -425,7 +426,7 @@ static bool setup_stack (void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
-                          bool writable);
+                          bool writable, struct page_mmap* mmap);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -468,6 +469,13 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
       printf ("load: %s: error loading executable\n", p_info->program_name);
       goto done; 
     }
+
+  /* Create mmap for executable file*/
+  // TODO(kenny): synchronize
+  lock_acquire (&syscall_file_lock);
+  size_t file_size = file_length(file);
+  lock_release (&syscall_file_lock);
+  struct page_mmap *mmap = page_mmap_new(file,file_size);
 
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
@@ -519,7 +527,7 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
               if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable))
+                                 read_bytes, zero_bytes, writable, mmap))
                 goto done;
             }
           else
@@ -611,14 +619,46 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    or disk read error occurs. */
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
-              uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
+              uint32_t read_bytes, uint32_t zero_bytes, bool writable,
+              struct page_mmap *mmap) 
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0) 
+  /*old way of loading in segment, left for testing purposes*/
+  //file_seek (file, ofs);
+  //while (read_bytes > 0 || zero_bytes > 0) 
+  //  {
+  //    /* Calculate how to fill this page.
+  //       We will read PAGE_READ_BYTES bytes from FILE
+  //       and zero the final PAGE_ZERO_BYTES bytes. */
+  //    size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+  //    size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+  //    /* Get a page of memory. */
+  //    uint8_t *page = page_alloc (upage);
+  //    if (page == NULL)
+  //      return false;
+
+  //    /* Load this page. */
+  //    page_pin ((void *) page);
+  //    if (file_read (file, page, page_read_bytes) != (int) page_read_bytes)
+  //      {
+  //        page_free (page);
+  //        return false; 
+  //      }
+  //    page_unpin ((void *) page);
+  //    memset (page + page_read_bytes, 0, page_zero_bytes);
+  //    page_set_writable (page, writable);
+  //    
+  //    /* Advance. */
+  //    read_bytes -= page_read_bytes;
+  //    zero_bytes -= page_zero_bytes;
+  //    upage += PGSIZE;
+  //  }
+
+  while (read_bytes > 0 || zero_bytes > 0)
     {
       /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
@@ -626,26 +666,20 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *page = page_alloc (upage);
-      if (page == NULL)
+      if (!page_add_to_mmap(mmap, upage, ofs, page_zero_bytes)) 
         return false;
+      struct page *page = page_lookup(upage);
+      if (writable)
+        page->evict_to = SWAP;
+      page_set_writable (upage, writable);
+      mmap->id = thread_current ()->mmap_next_id++;
+      list_push_back (&thread_current ()->mmap_list, &mmap->list_elem);
 
-      /* Load this page. */
-      page_pin ((void *) page);
-      if (file_read (file, page, page_read_bytes) != (int) page_read_bytes)
-        {
-          page_free (page);
-          return false; 
-        }
-      page_unpin ((void *) page);
-      memset (page + page_read_bytes, 0, page_zero_bytes);
-      page_set_writable (page, writable);
-      
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      ofs += PGSIZE;
     }
   return true;
 }
