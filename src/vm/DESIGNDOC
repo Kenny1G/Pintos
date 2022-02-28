@@ -112,14 +112,52 @@ Kenny Oseleononmen <kenny1g@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+In page.c, we added the following to store supplemental information about memory mapped files:
+/* Wrapper struct for a mmaped file */
+struct page_mmap 
+  {
+    mapid_t id;                 /* ID of mmap*/
+    struct list_elem list_elem; /* List element to place mmap in list */
+    struct file *file;          /* File backing mmap */
+    size_t file_size;           /* Size of above */
+    struct list mmap_pages;     /* List of pages mapped to this mmap */
+  };
+
+The mmap_pages list holds the instances of the following:
+
+/* Wrapper struct for a page in an mmap*/
+struct page_mmap_elem 
+  {
+    struct list_elem list_elem; /* List element to put page in mmap_pages */
+    void* page_addr;            /* Virtual Address of page */
+  };
+
+In the thread struct, we added:
+    /* VM */
+    struct list mmap_list;              /* List of process' mmap files*/
+    mapid_t mmap_next_id;               /* Next availabnle mmap id */
+
+The mmap_list holds the page_mmap structs, and mmap_next_id is a counter used to give the process's mmaped files unique id's. 
+
 ---- ALGORITHMS ----
 
 >> C2: Describe how memory mapped files integrate into your virtual
 >> memory subsystem.  Explain how the page fault and eviction
 >> processes differ between swap pages and other pages.
 
+Memory mapped files integrates with existing virtual memory
+subsystems. Some info on memory mapping is tied into the page struct
+while some is externalized in an additional structs (see above). The page fault process
+only differs in where the data is loaded from a file vs swap.
+
 >> C3: Explain how you determine whether a new file mapping overlaps
 >> any existing segment.
+
+We determine whether a new file mapping overlaps an existing segment
+by both checking that our page table has no entries, and pagedir_get_page
+returns null, for the addresses that our file mapping encompasses
+(meaning no physical address corresponds to those virtual addresses).
+
 
 ---- RATIONALE ----
 
@@ -129,6 +167,15 @@ Kenny Oseleononmen <kenny1g@stanford.edu>
 >> that much of their implementation can be shared.  Explain why your
 >> implementation either does or does not share much of the code for
 >> the two situations.
+
+ Our implementation shares most of the code between both situations. 
+Both situations create an mmap object that is added to the running thread
+and associates as many pages as the file needs to be in memory. We did this
+for simplicity sake. Seeing as the framework already existed to map pages to
+a file it was easiest to just use it. The only difference is that we update the 
+pages allocated for executables to evict to a swap slot if they are writable
+and if they are not writeable, we simply clear them without writing them anywhere
+but rewrite them from file when they're paged back in.
 
                SURVEY QUESTIONS
                ================
