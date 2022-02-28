@@ -475,7 +475,6 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
     }
 
   /* Create mmap for executable file*/
-  // TODO(kenny): synchronize
   size_t file_size = file_length(file);
   struct page_mmap *mmap = page_mmap_new(file,file_size);
 

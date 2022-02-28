@@ -83,7 +83,7 @@ page_alloc (void *uaddr)
   p->uaddr = paddr;
   p->thread = t;
   p->location = NEW;
-  p->evict_to = SWAP; /* TODO - modify to FILE for mmap. */
+  p->evict_to = SWAP;
   p->frame = NULL;
   p->writable = true;
   p->pinned = false;
@@ -155,7 +155,6 @@ page_page_free (struct page *p)
               page_evict (p);
             frame_free (p->frame);
             break;
-          /* TODO - implement other page locations. */
           default:
             break;
         }
@@ -280,24 +279,12 @@ page_in (struct page *page)
       case SWAP:
         /* Swap-in the page data. */
         if (!swap_in (frame, page->swap_slot))
-          {
-            /* Failing to swap-in a page means that we lost it forever. */
-            page->location = CORRUPTED;
-            frame_free (frame);
-            page->pinned = false;
-            return false;
-          }
+          goto fail;
         break;
       case FILE:
         if (!page_file_in (page))
-          {
-            /*TODO (kenny): definitely need to do some more cleaning up*/
-            frame_free (frame);
-            page->pinned = false;
-            return false;
-          }
+          goto fail;
         break;
-      /* TODO - add other cases (e.g. mmaped files). */
       default:
         PANIC ("Failed to page-in at address %p!", page->uaddr);
     }
@@ -305,6 +292,13 @@ page_in (struct page *page)
   /* Reset the original value of the writable bit. */
   pagedir_set_writable (t->pagedir, page->uaddr, page->writable);
   return true;
+fail:
+  /* Failing to swap-in a page means that we lost it forever. */
+  page->location = CORRUPTED;
+  frame_free (frame);
+  page->pinned = false;
+  return false;
+
 }
 
 /* Reads data into mmapped PAGE from file backing it */
@@ -373,9 +367,8 @@ page_resolve_fault (void *fault_addr)
 
    Caller of this function is responsible for acquring the page lock
    first
-   
-   TODO: implement other forms of eviction depending on the 
-         nature of PAGE (e.g. write to filesystem). */
+
+*/
 bool
 page_evict (struct page *page)
 {
@@ -402,7 +395,6 @@ page_evict (struct page *page)
           if (page->writable && pagedir_is_dirty (page->thread->pagedir,
                 page->uaddr))
             {
-              //TODO(kenny): synchronization
               //Write page to fle
               lock_acquire (&syscall_file_lock);
               struct page_mmap *mmap = page->mmap;
