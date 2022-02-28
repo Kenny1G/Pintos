@@ -379,7 +379,7 @@ static void
 syscall_read (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  char *buffer = (char *) syscall_get_arg (f, 2);
+  uint8_t *buffer = (uint8_t *) syscall_get_arg (f, 2);
   uint32_t size = syscall_get_arg (f, 3);
   /* Verify that the entire buffer is valid user memory that's writable. */
   syscall_validate_user_memory (buffer, size, true);
@@ -406,10 +406,13 @@ syscall_read (struct intr_frame *f)
           f->eax = -1;
           return;
         }
-      
+      for (uint8_t *cpage = pg_round_down (buffer); cpage <= buffer + size; cpage += PGSIZE)
+        page_pin (cpage);
       lock_acquire(&syscall_file_lock);
-      f->eax = file_read(process_fd->file, buffer, size);
+      f->eax = file_read (process_fd->file, buffer, size);
       lock_release(&syscall_file_lock);
+      for (uint8_t *cpage = pg_round_down (buffer); cpage <= buffer + size; cpage += PGSIZE)
+        page_unpin (cpage);
     }
 }
 
