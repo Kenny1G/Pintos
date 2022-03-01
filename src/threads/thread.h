@@ -3,8 +3,10 @@
 
 #include <debug.h>
 #include <list.h>
+#include <hash.h>
 #include <stdint.h>
 #include <fixed-point.h>
+#include "userprog/syscall.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -108,19 +110,28 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     char *process_fn;                   /* Filename in process_execute. */
     int32_t process_exit_code;          /* Exit code for process_exit. */
-    
+
     /* Guarded by process.c/process_child_lock. */
     struct process_child *inparent;     /* Record of T in its parent.
                                            NULL if orphaned. */
     struct list process_children;       /* List of child processes. */
 
+    /* Owned by vm/page.c. */
+    struct hash page_table;             /* Supplemental page table for VM. */
+    struct lock *page_table_lock;       /* Lock guarding the thread's SPT. */
+
+    /* VM */
+    struct list mmap_list;              /* List of process' mmap files*/
+    mapid_t mmap_next_id;               /* Next availabnle mmap id */
+
     /* File system */
     struct file* exec_file;             /* The file that spawned this process*/
 
-    struct list process_fd_table;       /* List of this process' file 
+    struct list process_fd_table;       /* List of this process' file
                                            descriptors*/
     int process_fd_next;                /* ID to be assigned to next fd */
 #endif
+
     int64_t wake_tick;                  /* Number of ticks left to sleep*/
     struct semaphore *sleep_sema;       /* Semaphore to sleep and wake thread*/
     struct list_elem slept_elem;        /* List element for slept_threads list*/

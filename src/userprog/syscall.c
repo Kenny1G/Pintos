@@ -15,6 +15,7 @@
 #include "devices/input.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/page.h"
 
 struct lock syscall_file_lock;  /*Lock to synchronize filesystem access*/
 
@@ -26,7 +27,7 @@ struct syscall_file
     struct hash_elem hash_elem; /* Hash table element. */
     char* file_name;            /* Key in hash table. */
     int count;                  /* Number of open instances of file. */
-    struct file* file;          /* File associated with this wrapper. */            
+    struct file* file;          /* File associated with this wrapper. */
     bool marked_del;            /* If this file is to be removed. */
   };
 static unsigned
@@ -57,7 +58,7 @@ syscall_file_lookup (const char *file_name)
   return e != NULL ? hash_entry(e, struct syscall_file, hash_elem) : NULL;
 }
 
-/* This function Removes key FILE_NAME from syscall_file_table and 
+/* This function Removes key FILE_NAME from syscall_file_table and
  * returns removed element.
  * returns NULL if file_name was not found in syscall_file_table. */
 static struct hash_elem *
@@ -77,7 +78,7 @@ syscall_file_remove (const char *file_name)
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t syscall_get_arg (struct intr_frame *f, size_t idx);
-static void syscall_validate_user_memory (const void *uaddr, size_t size);
+static void syscall_validate_user_memory (const void *uaddr, size_t, bool);
 static void syscall_validate_user_string (const char *uaddr, size_t max_size);
 static void syscall_terminate_process (void);
 
@@ -100,11 +101,13 @@ static void syscall_seek (struct intr_frame *);
 static void syscall_tell (struct intr_frame *);
 static void syscall_close (struct intr_frame *);
 static void syscall_curmem (struct intr_frame *);
+static void syscall_mmap (struct intr_frame *);
+static void syscall_munmap (struct intr_frame *);
 
 /* Initialize syscalls by registering dispatch functions for supported
    syscall numbers and then registering the syscall interrupt handler. */
 void
-syscall_init (void) 
+syscall_init (void)
 {
   syscall_handlers[SYS_HALT] = syscall_halt;
   syscall_handlers[SYS_EXIT] = syscall_exit;
@@ -120,7 +123,9 @@ syscall_init (void)
   syscall_handlers[SYS_TELL] = syscall_tell;
   syscall_handlers[SYS_CLOSE] = syscall_close;
   syscall_handlers[SYS_CURMEM] = syscall_curmem;
-  barrier ();  /* Write all handlers before starting syscalls. */ 
+  syscall_handlers[SYS_MMAP] = syscall_mmap;
+  syscall_handlers[SYS_MUNMAP] = syscall_munmap;
+  barrier ();  /* Write all handlers before starting syscalls. */
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
   lock_init (&syscall_file_lock);
@@ -136,7 +141,7 @@ syscall_curmem (struct intr_frame *f)
 }
 
 static void
-syscall_handler (struct intr_frame *f) 
+syscall_handler (struct intr_frame *f)
 {
   int syscall_number;
   syscall_handler_func *handler_func;
@@ -144,7 +149,7 @@ syscall_handler (struct intr_frame *f)
   ASSERT (f != NULL);
 
   syscall_number = syscall_get_arg(f, 0);
-  if (syscall_number < 0 || syscall_number >= SYSCALL_CNT 
+  if (syscall_number < 0 || syscall_number >= SYSCALL_CNT
       || syscall_handlers[syscall_number] == NULL)
     /* Unsupported syscall. */
     syscall_terminate_process ();
@@ -156,7 +161,7 @@ syscall_handler (struct intr_frame *f)
 }
 
 
-static void 
+static void
 syscall_terminate_process (void)
 {
   thread_current()->process_exit_code = -1;
@@ -165,28 +170,29 @@ syscall_terminate_process (void)
 
 
 /* Returns if UADDR is a valid virtual address in the page directory
-   of the curren thread along with the entire block of SIZE bytes following 
+   of the curren thread along with the entire block of SIZE bytes following
    UADDR. Otherwise, calls syscall_terminate_process and never returns.
    SIZE must be a positive value. */
-static void 
-syscall_validate_user_memory (const void *uaddr, size_t size)
+static void
+syscall_validate_user_memory (const void *uaddr, size_t size, bool writable)
 {
   const void *current_page;
+  struct page *p;
 
   ASSERT (thread_current ()->pagedir != NULL);
 
   if (uaddr == NULL)
       syscall_terminate_process ();
   /* Loop over every page in the queried block and check its validity. */
-  for (current_page = pg_round_down (uaddr); 
-       current_page <= pg_round_down ((const uint8_t *)uaddr + size); 
+  for (current_page = pg_round_down (uaddr);
+       current_page <= pg_round_down ((const uint8_t *)uaddr + size);
        current_page += PGSIZE)
     {
-      if (!is_user_vaddr (current_page) 
-          || pagedir_get_page (thread_current ()->pagedir, 
-                               current_page) == NULL)
+      if (!is_user_vaddr (current_page)
+          || (p = page_lookup ((void *) current_page)) == NULL
+          || (writable && !page_is_writable (p)))
           syscall_terminate_process ();
-    } 
+    }
 }
 
 /* Returns if UADDR points to a valid null-terminated string in the
@@ -194,7 +200,7 @@ syscall_validate_user_memory (const void *uaddr, size_t size)
    in the MAX_SIZE valid chars following UADDR. Otherwise, calls
    syscall_terminate_process and never returns.
    MAX_SIZE must be positive. */
-static void 
+static void
 syscall_validate_user_string (const char *uaddr, size_t max_size)
 {
   const char *caddr = uaddr;
@@ -203,7 +209,7 @@ syscall_validate_user_string (const char *uaddr, size_t max_size)
 
   for (; caddr != uaddr + max_size + 1; ++caddr)
     {
-      syscall_validate_user_memory (caddr, sizeof (char));
+      syscall_validate_user_memory (caddr, sizeof (char), false);
       if (*caddr == '\0')
         break;
     }
@@ -213,23 +219,23 @@ syscall_validate_user_string (const char *uaddr, size_t max_size)
    interrupt frame F after passing it to syscall_validate_user_memory.
    Remember that all arguments are of size 32-bit.
    Remember that IDX=0 is the syscall number. */
-static uint32_t 
+static uint32_t
 syscall_get_arg (struct intr_frame *f, size_t idx)
 {
   uint32_t *arg = (uint32_t *)(f->esp) + idx;
-  syscall_validate_user_memory (arg, sizeof (uint32_t));
+  syscall_validate_user_memory (arg, sizeof (uint32_t), false);
   return *arg;
 }
 
 /* Shuts down the machine by calling shutdown_power_off.
    Never returns. */
-static void 
+static void
 syscall_halt (struct intr_frame *f UNUSED)
 {
   shutdown_power_off ();
 }
 
-static void 
+static void
 syscall_exit (struct intr_frame *f)
 {
   int32_t status = syscall_get_arg (f, 1);
@@ -237,7 +243,7 @@ syscall_exit (struct intr_frame *f)
   thread_exit ();
 }
 
-static void 
+static void
 syscall_exec (struct intr_frame *f)
 {
   const char *cmd_line = (const char* ) syscall_get_arg (f, 1);
@@ -246,7 +252,7 @@ syscall_exec (struct intr_frame *f)
   f->eax = tid;
 }
 
-static void 
+static void
 syscall_wait (struct intr_frame *f)
 {
   tid_t tid = syscall_get_arg (f, 1);
@@ -254,7 +260,7 @@ syscall_wait (struct intr_frame *f)
   f->eax = exit_code;
 }
 
-static void 
+static void
 syscall_create (struct intr_frame *f)
 {
   const char *file_name = (const char* ) syscall_get_arg (f, 1);
@@ -266,7 +272,7 @@ syscall_create (struct intr_frame *f)
   lock_release (&syscall_file_lock);
 }
 
-static void 
+static void
 syscall_remove (struct intr_frame *f)
 {
   const char *file_name = (const char *) syscall_get_arg (f, 1);
@@ -290,7 +296,7 @@ syscall_remove (struct intr_frame *f)
   f->eax = bRet;
 }
 
-static void 
+static void
 syscall_open (struct intr_frame *f)
 {
   const char *file_name = (const char *) syscall_get_arg (f, 1);
@@ -309,8 +315,8 @@ syscall_open (struct intr_frame *f)
        * to system wide file table */
 
       /* Freed when it's last fd closes */
-      file_wrapper = calloc (1, sizeof(struct syscall_file)); 
-      if (file_wrapper == NULL) 
+      file_wrapper = calloc (1, sizeof(struct syscall_file));
+      if (file_wrapper == NULL)
         goto fail;
 
       /* Set file_wrapper members */
@@ -352,11 +358,11 @@ fail:
   return;
 }
 
-static void 
+static void
 syscall_filesize (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  
+
   struct process_fd *process_fd = process_get_fd (thread_current (), fd);
   if (process_fd == NULL)
     {
@@ -369,27 +375,29 @@ syscall_filesize (struct intr_frame *f)
   lock_release(&syscall_file_lock);
 }
 
-static void 
+static void
 syscall_read (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  char *buffer = (char *) syscall_get_arg (f, 2);
+  uint8_t *buffer = (uint8_t *) syscall_get_arg (f, 2);
   uint32_t size = syscall_get_arg (f, 3);
-  /* Verify that the entire buffer is valid user memory. */
-  syscall_validate_user_memory (buffer, size);
-  
+  /* Verify that the entire buffer is valid user memory that's writable. */
+  syscall_validate_user_memory (buffer, size, true);
+
   if (fd == 0)
     {
       /* Read from stdin */
       size_t bytes_read = 0;
-      while (bytes_read < size) 
+      while (bytes_read < size)
         {
+          page_pin (buffer);
           buffer[bytes_read] = input_getc ();
+          page_unpin (buffer);
           bytes_read++;
         }
       f->eax = bytes_read;
     }
-  else 
+  else
     {
       /* Read for files */
       struct process_fd *process_fd = process_get_fd (thread_current (), fd);
@@ -398,14 +406,17 @@ syscall_read (struct intr_frame *f)
           f->eax = -1;
           return;
         }
-      
+      for (uint8_t *cpage = pg_round_down (buffer); cpage <= buffer + size; cpage += PGSIZE)
+        page_pin (cpage);
       lock_acquire(&syscall_file_lock);
-      f->eax = file_read(process_fd->file, buffer, size);
+      f->eax = file_read (process_fd->file, buffer, size);
       lock_release(&syscall_file_lock);
+      for (uint8_t *cpage = pg_round_down (buffer); cpage <= buffer + size; cpage += PGSIZE)
+        page_unpin (cpage);
     }
 }
 
-static void 
+static void
 syscall_write (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
@@ -413,19 +424,21 @@ syscall_write (struct intr_frame *f)
   size_t stride, size = syscall_get_arg (f, 3);
   /* Verify that the entire buffer is valid user memory. */
   syscall_validate_user_string (buffer, size);
- 
+
+  uint8_t * buff = (uint8_t *) buffer;
   if (fd == 1)
     {
        /* For FD==1, print to the console strides of the buffer. */
       while (size > 0)
         {
           size -= stride = size > 256 ? 256 : size;
+          page_pin (buff);
           putbuf(buffer, stride);
-
+          page_unpin (buff);
           buffer += stride;
         }
     }
-  else 
+  else
     {
       /* Write for files */
       struct process_fd *process_fd = process_get_fd (thread_current (), fd);
@@ -434,19 +447,24 @@ syscall_write (struct intr_frame *f)
           f->eax = -1;
           return;
         }
-      
+      for (uint8_t *cpage = pg_round_down (buff); cpage <= buff + size; cpage += PGSIZE)
+        page_pin (cpage);
+
       lock_acquire(&syscall_file_lock);
       f->eax = file_write(process_fd->file, buffer, size);
       lock_release(&syscall_file_lock);
+
+      for (uint8_t *cpage = pg_round_down (buff); cpage <= buff+ size; cpage += PGSIZE)
+        page_unpin (cpage);
     }
 }
 
-static void 
+static void
 syscall_seek (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
   unsigned position = syscall_get_arg (f, 2);
-  
+
   struct process_fd *process_fd = process_get_fd (thread_current (), fd);
   if (process_fd == NULL)
     {
@@ -459,24 +477,24 @@ syscall_seek (struct intr_frame *f)
   lock_release(&syscall_file_lock);
 }
 
-static void 
+static void
 syscall_tell (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
-  
+
   struct process_fd *process_fd = process_get_fd (thread_current (), fd);
   if (process_fd == NULL)
     {
       f->eax = -1;
       return;
     }
-  
+
   lock_acquire(&syscall_file_lock);
   f->eax = file_tell(process_fd->file);
   lock_release(&syscall_file_lock);
 }
 
-static void 
+static void
 syscall_close (struct intr_frame *f)
 {
   int32_t fd = syscall_get_arg (f, 1);
@@ -487,10 +505,10 @@ syscall_close (struct intr_frame *f)
  * file descriptor table. */
 void syscall_close_helper (int fd)
 {
-  struct process_fd *process_fd = process_get_fd (thread_current (), fd); 
-  if (process_fd == NULL) 
+  struct process_fd *process_fd = process_get_fd (thread_current (), fd);
+  if (process_fd == NULL)
     return;
-  
+
   lock_acquire(&syscall_file_lock);
   struct syscall_file *file_wrapper = syscall_file_lookup (process_fd->file_name);
   if (file_wrapper == NULL)
@@ -503,7 +521,7 @@ void syscall_close_helper (int fd)
   if (--file_wrapper->count == 0)
     {
       file_close (process_fd->file);
-      if (file_wrapper->marked_del) 
+      if (file_wrapper->marked_del)
         filesys_remove(process_fd->file_name);
       syscall_file_remove (process_fd->file_name);
       if (file_wrapper->file_name)
@@ -516,4 +534,78 @@ void syscall_close_helper (int fd)
 
   lock_release(&syscall_file_lock);
   return;
+}
+
+/* Maps the file open as fd into the process's virtual address space*/
+static void
+syscall_mmap (struct intr_frame *f)
+{
+  int32_t fd = syscall_get_arg(f, 1);
+  void *addr = (void *) syscall_get_arg(f, 2);
+  struct thread *t = thread_current ();
+  f->eax = MAP_FAILED;
+
+  // Fail if addr is 0, addr is not page-aligned, or fd is 0 or 1
+  if (addr == 0 || pg_round_down (addr) != addr || fd == 0 || fd == 1)
+    return;
+
+  // Get file that will back mmap
+  struct process_fd *process_fd = process_get_fd (t, fd);
+  if (process_fd == NULL)
+    return;
+  lock_acquire (&syscall_file_lock);
+  size_t file_size = file_length(process_fd->file);
+
+  // Fail if backing file has length 0
+  if (file_size == 0)
+    {
+      lock_release (&syscall_file_lock);
+      return;
+    }
+
+  // Create a new memory map
+  struct page_mmap *mmap = page_mmap_new(process_fd->file, file_size);
+  lock_release (&syscall_file_lock);
+
+  // Populate mmap's pages
+  size_t offset = 0;
+  while (offset < mmap->file_size)
+    {
+      // Get zero bytes of page
+      size_t zero_bytes = 0;
+      size_t stick_out = mmap->file_size - offset;
+
+      if (stick_out < PGSIZE)
+        zero_bytes = PGSIZE - stick_out;
+      bool success = page_add_to_mmap (mmap, addr + offset, offset, zero_bytes);
+      if (!success)
+        {
+          page_delete_mmap (mmap);
+          return;
+        }
+      offset += PGSIZE;
+    }
+
+  // Associate mmap with thread
+  mmap->id = t->mmap_next_id++;
+  list_push_back (&t->mmap_list, &mmap->list_elem);
+
+  f->eax = mmap->id;
+  return;
+}
+
+/* Unmaps the mapping designated by mapping, which must be a mapping ID
+ * returned by a previous call to mmap by the same process that has not
+ * yet been unmapped. */
+static void
+syscall_munmap (struct intr_frame *f)
+{
+  mapid_t id = syscall_get_arg(f, 1);
+
+  struct page_mmap *mmap = page_get_mmap (thread_current (), id);
+  if (mmap != NULL)
+    {
+      list_remove (&mmap->list_elem);
+      page_delete_mmap (mmap);
+    }
 }
