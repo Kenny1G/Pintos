@@ -101,12 +101,13 @@ write_to_disk (struct cache_block *block)
   ASSERT (block->state != CACHE_BEING_READ);
   if (!(block->dirty_bit & DIRTY))
     return;
-  if (block->state != CACHE_BEING_WRITTEN)
+  if (block->state == CACHE_READY || block->state == CACHE_EVICTED)
     {
       enum cache_state og_state = block->state;
       /* We don't want to write to disk until accessors have finished making
        * their changes. */
-      // TODO(kenny) : maybe set state to pending write here
+      // TODO(kenny) : still unsure if we need pending write
+      block->state = CACHE_PENDING_WRITE;
       while (block->num_accessors > 0)
         cond_wait(&block->being_accessed, &block->lock);
 
@@ -120,11 +121,13 @@ write_to_disk (struct cache_block *block)
       block->state = og_state;
       cond_broadcast (&block->being_written, &block->lock);
     }
-  else
+  else if (block->state == CACHE_BEING_WRITTEN ||
+      block->state == CACHE_PENDING_WRITE)
     {
       /*If block is already being written to disk, it's not our problem,
        * wait til it's finished then return */
-      while (block->state == CACHE_BEING_WRITTEN)
+      while (block->state == CACHE_BEING_WRITTEN ||
+          block->state == CACHE_PENDING_WRITE)
         cond_wait (&block->being_written, &block->lock);
     }
 }
@@ -138,18 +141,23 @@ void
 read_from_disk (block_sector_t sector_idx, struct cache_block *block,
     bool is_metadata)
 {
+  ASSERT (block->state != CACHE_READY)
   /* We don't want to ovewrite what accessors are reading */
   while (block->num_accessors > 0)
-    cond_wait(&block->being_accessed, &block->lock);
+    cond_wait (&block->being_accessed, &block->lock);
+
+  ASSERT (block->num_accessors == 0);
 
   block->state = CACHE_BEING_READ;
   block->sector_idx = sector_idx;
   block->dirty_bit = CLEAN;
   block->is_metadata = is_metadata;
+
   // TODO(kenny) maybe release lock here 
   ASSERT (block->sector_idx != INODE_INVALID_SECTOR);
   block_read (fs_device, sector_idx, block->buffer);
   // TODO(kenny) maybe reclaim lock here 
+  
   block->state = CACHE_READY;
   cond_broadcast (&block->being_read, &block->lock);
 }
@@ -191,8 +199,11 @@ block_lookup (block_sector_t sector_idx)
           /* Critical point so this block isn't evicted before we declare 
            * we're accessing it*/
           lock_acquire (&cand->lock);
+          //if (cand->state == CACHE_BEING_READ)
+          //  cond_wait (&cand->being_read, &cand->lock);
           if (cand->sector_idx == sector_idx)
             {
+              ASSERT (cand->state == CACHE_READY);
               cand->num_accessors++;
               lock_release (&cand->lock);
               return cand;
