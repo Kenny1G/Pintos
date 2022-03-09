@@ -162,15 +162,13 @@ struct cache_block*
 cache_sector (block_sector_t sector_idx,  bool is_metadata)
 {
   struct cache_block *block = pick_and_evict();
-  if (block->dirty_bit & DIRTY)
-    {
-      write_to_disk (block);
-    }
+  write_to_disk (block);
 
   // read from disk
   read_from_disk (sector_idx, block, is_metadata);
   block->num_accessors++;
   lock_release (&block->lock);
+
   return block;
 }
 
@@ -220,22 +218,40 @@ get_sector (block_sector_t sector_idx, bool is_metadata)
   struct cache_block *block = block_lookup (sector_idx);
   if (block == NULL)
     block = cache_sector (sector_idx, is_metadata);
+
+  lock_acquire (&block->lock);
+  block->dirty_bit |= ACCESSED;
+  if (is_metadata)
+    block->dirty_bit |= META;
+  lock_release (&block->lock);
   return block;
 }
 
-/* Public functions definitions.*/
-
-/* Reads SIZE bytes from cache block for dist sector at SECTOR_IDX into buffer
- * BUFFER. caches the disk sector if it is not already cached 
- * returns the number of bytes it successfully reads */
-void cache_read_at (block_sector_t sector_idx, uint8_t *buffer, 
-    bool is_metadata, off_t offset, off_t size)
+/* Performs IO of SIZE bytes between cache block for dist sector at SECTOR_IDX 
+ * and buffer BUFFER. caches the disk sector if it is not already cached 
+ * returns the number of bytes it successfully IOs */
+void cache_io_at (block_sector_t sector_idx, void *buffer, 
+    bool is_metadata, off_t offset, off_t size, bool is_write)
 {
   struct cache_block *block = get_sector (sector_idx, is_metadata);
-  memcpy (buffer, block->buffer + offset, size);
+
+  ASSERT (offset + size <= BLOCK_SECTOR_SIZE);
+  ASSERT (block->state == CACHE_READY);
+  ASSERT (block->sector_idx == sector_idx);
+  ASSERT (block->num_accessors > 0);
+
+  if (!is_write)
+    memcpy (buffer, block->buffer + offset, size);
+  else
+    {
+      block->dirty_bit |= DIRTY;
+      memcpy (block->buffer + offset, buffer, size);
+    }
+
   lock_acquire (&block->lock);
   block->num_accessors--;
-  cond_broadcast(&block->being_accessed, &block->lock);
+  if (block->num_accessors == 0)
+    cond_broadcast(&block->being_accessed, &block->lock);
   lock_release (&block->lock);
   return;
 }
