@@ -195,7 +195,7 @@ block_lookup (block_sector_t sector_idx)
         {
           /* A block that is not ready or actively being read has been evicted*/
           if (cand->state != CACHE_READY && cand->state != CACHE_BEING_READ)
-            return NULL;
+            continue;
           /* Critical point so this block isn't evicted before we declare 
            * we're accessing it*/
           lock_acquire (&cand->lock);

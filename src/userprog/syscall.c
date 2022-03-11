@@ -350,7 +350,7 @@ syscall_open (struct intr_frame *f)
     }
 
   file_wrapper->count++;
-  f->eax = process_new_fd (thread_current(), file_wrapper->file,
+  f->eax = process_new_fd (thread_current(), file_reopen(file_wrapper->file),
                            file_wrapper->file_name);
   return;
 fail:
