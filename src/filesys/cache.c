@@ -5,14 +5,13 @@
 #include "debug.h"
 #include "filesys.h"
 
-/*Lock to ensure only one instance of the clock algorithm runs*/
+/* Lock to ensure only one instance of the clock algorithm runs*/
 static struct lock clock_lock; 
-/*Cache table*/
+/* Cache table*/
 static struct cache_block cache[CACHE_NUM_SECTORS];
 static int clock_hand;
 
 /* Private helper functions declarations and definitions.*/
-
 struct cache_block *get_sector (block_sector_t sector_idx, bool is_metadata);
 struct cache_block *block_lookup (block_sector_t sector_idx);
 struct cache_block* cache_sector (block_sector_t sector_idx, bool is_metadata);
