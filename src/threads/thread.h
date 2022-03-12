@@ -126,7 +126,7 @@ struct thread
 
     /* File system */
     struct file* exec_file;             /* The file that spawned this process*/
-
+    struct dir* cwd;                    /* The current working directory. */
     struct list process_fd_table;       /* List of this process' file
                                            descriptors*/
     int process_fd_next;                /* ID to be assigned to next fd */

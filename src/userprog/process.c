@@ -35,6 +35,7 @@ extern struct lock syscall_file_lock;
 struct process_info {
   char *cmd_line;           /* Pointer to the cmd line of args on the heap. */
   char *program_name;       /* Pointer to the program name (first arg). */
+  struct dir *cwd;          /* Current working directory inherited. */
   struct semaphore loaded;  /* Prevents the thread from running until process
                                info is loaded in the stack */
   struct process_child *inparent;
@@ -94,6 +95,7 @@ process_execute (const char *file_name)
   /* Parse out program name without modifying str */
   size_t len_prog_name = strcspn(p_info->cmd_line, " ");
   p_info->program_name = calloc (sizeof(char), len_prog_name + 1);
+  p_info->cwd = dir_reopen (thread_current ()->cwd);
   if (p_info->program_name == NULL)
     {
       tid = TID_ERROR;
@@ -114,6 +116,8 @@ done: /* Arrives here on success or error. */
       if (p_child != NULL)
         list_remove (&p_child->elem);
       free (p_child);
+      if (p_info != NULL)
+        dir_close (p_info->cwd);
     }
   else
     p_child->tid = tid;
@@ -185,6 +189,7 @@ start_process (void *process_info)
 
   /* Set up received member values. */
   cur->process_fn = p_info->program_name;
+  cur->cwd = p_info->cwd;
   lock_acquire (&process_child_lock);
   cur->inparent = p_info->inparent;
   if (cur->inparent != NULL)
