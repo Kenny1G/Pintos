@@ -4,41 +4,57 @@
 #include "inode.h"
 #include "debug.h"
 #include "filesys.h"
+#include "threads/thread.h"
 
+/**
+ * Wrapper struct to add next sectors to list of sectors to read in background. 
+ */
+static struct async_sector_wrapper 
+  {
+    block_sector_t sector_idx;
+    struct list_elem elem;
+  };
 /* Lock to ensure only one instance of the clock algorithm runs*/
-static struct lock clock_lock; 
+
 /* Cache table*/
-static struct cache_block cache[CACHE_NUM_SECTORS];
+static struct cache_sector cache[CACHE_NUM_SECTORS];
+static struct lock clock_lock; 
+static struct lock async_read_lock;
+/* List of sectors to be cached in the background */
+static struct list async_read_list;
+static thread_func read_asynchronously;
 static int clock_hand;
 
-/* Private helper functions declarations and definitions.*/
-struct cache_block *get_sector (block_sector_t sector_idx, bool is_metadata);
-struct cache_block *block_lookup (block_sector_t sector_idx);
-struct cache_block* cache_sector (block_sector_t sector_idx, bool is_metadata);
-struct cache_block* pick_and_evict (void);
-void write_to_disk (struct cache_block *block);
-void read_from_disk (block_sector_t sector_idx, struct cache_block *block, 
-                      bool is_metadata);
 
-/* This function finds the next eligible block to evict and returns it, claiming
- * it's lock first
+/* Private helper functions declarations and definitions.*/
+struct cache_sector *get_sector (block_sector_t sector_idx, bool is_metadata);
+struct cache_sector *sector_lookup (block_sector_t sector_idx);
+struct cache_sector* cache_sector_at (block_sector_t sector_idx, bool is_metadata);
+struct cache_sector* pick_and_evict (void);
+void write_to_disk (struct cache_sector *sect);
+void read_from_disk (block_sector_t sector_idx, struct cache_sector *sector, 
+                     bool is_metadata);
+static void read_ahead ();
+
+/* This function finds the next eligible cache sector to evict and returns it,
+ * claiming it's lock first
  *
  * NOTE: The caller of this function is responsible for releasing the lock of 
- * the block returned when it is done using it. */
-struct cache_block*
+ * the cache sector returned when it is done using it. */
+struct cache_sector*
 pick_and_evict ()
 {
-  /* Critical section so thread A doesn't evict the block thread B wants
-   * to evict before thread B is able to set said block's state to evicted. */
+  /* Critical section so thread A doesn't evict the cache sector thread B wants
+   * to evict before thread B is able to set said cache sector's state to evicted. */
   lock_acquire (&clock_lock);
   int clock_start = (++clock_hand) % CACHE_NUM_SECTORS;
-  struct cache_block *cand = &cache[clock_start];
+  struct cache_sector *cand = &cache[clock_start];
 
   while (cand->state != CACHE_READY)
     {
       clock_start = (++clock_hand) % CACHE_NUM_SECTORS;
       if (clock_hand == clock_start)
-        PANIC("No READY block found to evict"); //TODO(kenny): reevaluate
+        PANIC("No READY cache sector found to evict"); //TODO(kenny): reevaluate
       cand = &cache[clock_start];
     }
 
@@ -66,118 +82,119 @@ pick_and_evict ()
   return cand;
 }
 
-/* This buffer writes to disk the contents of the buffer of cache block BLOCK
+/* This buffer writes to disk the contents of the buffer of cache sector SECT 
  *
- * NOTE: the caller of this function must hold the lock to block
+ * NOTE: the caller of this function must hold the lock to SECT 
  */
 void
-write_to_disk (struct cache_block *block)
+write_to_disk (struct cache_sector *sect)
 {
-  /* Writing a block to disk is a critical section, no other thread should 
-   * access this block while it is being written to disk. */
-  ASSERT (lock_held_by_current_thread(&block->lock));
+  /* Writing a sector to disk is a critical section, no other thread should 
+   * access this sector while it is being written to disk. */
+  ASSERT (lock_held_by_current_thread(&sect->lock));
   // TODO(kenny): unsure of this for now, is it possible for write_to_disk
   // to be called on a disk that's being read from disk.
-  ASSERT (block->state != CACHE_BEING_READ);
-  if (!(block->dirty_bit & DIRTY))
+  ASSERT (sect->state != CACHE_BEING_READ);
+  if (!(sect->dirty_bit & DIRTY))
     return;
-  if (block->state == CACHE_READY || block->state == CACHE_EVICTED)
+  if (sect->state == CACHE_READY || sect->state == CACHE_EVICTED)
     {
-      enum cache_state og_state = block->state;
+      enum cache_state og_state = sect->state;
       /* We don't want to write to disk until accessors have finished making
        * their changes. */
       // TODO(kenny) : still unsure if we need pending write
-      block->state = CACHE_PENDING_WRITE;
-      while (block->num_accessors > 0)
-        cond_wait(&block->being_accessed, &block->lock);
+      sect->state = CACHE_PENDING_WRITE;
+      while (sect->num_accessors > 0)
+        cond_wait(&sect->being_accessed, &sect->lock);
 
-      block->state = CACHE_BEING_WRITTEN;
+      sect->state = CACHE_BEING_WRITTEN;
       // TODO(kenny) maybe release lock here 
-      ASSERT (block->sector_idx != INODE_INVALID_SECTOR);
-      block_write (fs_device, block->sector_idx, block->buffer);
+      ASSERT (sect->sector_idx != INODE_INVALID_SECTOR);
+      block_write (fs_device, sect->sector_idx, sect->buffer);
       
       // maybe reclaim lock here
-      block->dirty_bit &= ~DIRTY;
-      block->state = og_state;
-      cond_broadcast (&block->being_written, &block->lock);
+      sect->dirty_bit &= ~DIRTY;
+      sect->state = og_state;
+      cond_broadcast (&sect->being_written, &sect->lock);
     }
-  else if (block->state == CACHE_BEING_WRITTEN ||
-      block->state == CACHE_PENDING_WRITE)
+  else if (sect->state == CACHE_BEING_WRITTEN ||
+      sect->state == CACHE_PENDING_WRITE)
     {
-      /*If block is already being written to disk, it's not our problem,
+      /*If this cache sector is already being written to disk, it's not our problem,
        * wait til it's finished then return */
-      while (block->state == CACHE_BEING_WRITTEN ||
-          block->state == CACHE_PENDING_WRITE)
-        cond_wait (&block->being_written, &block->lock);
+      while (sect->state == CACHE_BEING_WRITTEN ||
+          sect->state == CACHE_PENDING_WRITE)
+        cond_wait (&sect->being_written, &sect->lock);
     }
 }
 
 /* This function reads the content of the sector at SECTOR_IDX into the 
- * buffer of BLOCK and updates BLOCK to reflect that it holds said sector
+ * buffer of SECT and updates SECT to reflect that it holds said sector
  *
- * NOTE: The caller of this function must be holding the lock to BLOCK
+ * NOTE: The caller of this function must be holding the lock to SECT 
  */
 void
-read_from_disk (block_sector_t sector_idx, struct cache_block *block,
+read_from_disk (block_sector_t sector_idx, struct cache_sector *sect,
     bool is_metadata)
 {
-  ASSERT (block->state != CACHE_READY)
+  ASSERT (sect->state != CACHE_READY)
   /* We don't want to ovewrite what accessors are reading */
-  while (block->num_accessors > 0)
-    cond_wait (&block->being_accessed, &block->lock);
+  while (sect->num_accessors > 0)
+    cond_wait (&sect->being_accessed, &sect->lock);
 
-  ASSERT (block->num_accessors == 0);
+  ASSERT (sect->num_accessors == 0);
 
-  block->state = CACHE_BEING_READ;
-  block->sector_idx = sector_idx;
-  block->dirty_bit = CLEAN;
-  block->is_metadata = is_metadata;
+  sect->state = CACHE_BEING_READ;
+  sect->sector_idx = sector_idx;
+  sect->dirty_bit = CLEAN;
+  sect->is_metadata = is_metadata;
 
   // TODO(kenny) maybe release lock here 
-  ASSERT (block->sector_idx != INODE_INVALID_SECTOR);
-  block_read (fs_device, sector_idx, block->buffer);
+  ASSERT (sect->sector_idx != INODE_INVALID_SECTOR);
+  block_read (fs_device, sector_idx, sect->buffer);
   // TODO(kenny) maybe reclaim lock here 
   
-  block->state = CACHE_READY;
-  cond_broadcast (&block->being_read, &block->lock);
+  sect->state = CACHE_READY;
+  cond_broadcast (&sect->being_read, &sect->lock);
 }
 
-/* This function caches the sector at SECTOR_IDX, evicting a block if necessary
+/* This function caches the sector at SECTOR_IDX, evicting a cache sector if 
+ * necessary
  *
  * NOTE: The caller of this function is responsible for decrementing the
- * NUM_ACCESSORS of the block returned when it is done using it. */
-struct cache_block*
-cache_sector (block_sector_t sector_idx,  bool is_metadata)
+ * NUM_ACCESSORS of the cache sector returned when it is done using it. */
+struct cache_sector*
+cache_sector_at (block_sector_t sector_idx,  bool is_metadata)
 {
-  struct cache_block *block = pick_and_evict();
-  write_to_disk (block);
+  struct cache_sector *sect = pick_and_evict();
+  write_to_disk (sect);
 
   // read from disk
-  read_from_disk (sector_idx, block, is_metadata);
-  block->num_accessors++;
-  lock_release (&block->lock);
+  read_from_disk (sector_idx, sect, is_metadata);
+  sect->num_accessors++;
+  lock_release (&sect->lock);
 
-  return block;
+  return sect;
 }
 
-/* This function checks if there exists a ready cache block associated with
+/* This function checks if there exists a ready cache sect associated with
  * the sector at SECTOR_IDX, returns it if it exists, NULL otherwise. 
  * 
  * NOTE: The caller of this function is responsible for decrementing the
- * NUM_ACCESSORS of the block returned when it is done using it. */
-struct cache_block*
-block_lookup (block_sector_t sector_idx)
+ * NUM_ACCESSORS of the cache sector returned when it is done using it. */
+struct cache_sector*
+sector_lookup (block_sector_t sector_idx)
 {
   for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
     {
-      struct cache_block *cand = &cache[i];
+      struct cache_sector *cand = &cache[i];
       if (cand->sector_idx == sector_idx)
         {
-          /* A block that is not ready or actively being read has been evicted*/
+          /* A cache sector that is not ready or actively being read has been evicted*/
           if (cand->state != CACHE_READY && cand->state != CACHE_BEING_READ)
             continue;
-          /* Critical point so this block isn't evicted before we declare 
-           * we're accessing it*/
+          /* Critical point so this cahce sector's lock isn't 
+           * evicted before we declare we're accessing it*/
           lock_acquire (&cand->lock);
           //if (cand->state == CACHE_BEING_READ)
           //  cond_wait (&cand->being_read, &cand->lock);
@@ -190,7 +207,7 @@ block_lookup (block_sector_t sector_idx)
             }
           else
             {
-              /* This block was replaced between our finding it and the
+              /* This cache sector was replaced between our finding it and the
                * acquirance of its lock*/
               lock_release (&cand->lock);
               return NULL;
@@ -201,54 +218,54 @@ block_lookup (block_sector_t sector_idx)
     return NULL;
 }
 
-/* This function returns a cache block that holds disk sector at sector_idx
- * If such a block does not exist, it caches it. */
-struct cache_block*
+/* This function returns a cache sector that holds disk sector at sector_idx
+ * If such a sector does not exist, it caches it. */
+struct cache_sector*
 get_sector (block_sector_t sector_idx, bool is_metadata)
 {
-  struct cache_block *block = block_lookup (sector_idx);
-  if (block == NULL)
-    block = cache_sector (sector_idx, is_metadata);
+  struct cache_sector *sect = sector_lookup (sector_idx);
+  if (sect == NULL)
+    sect = cache_sector_at (sector_idx, is_metadata);
 
-  lock_acquire (&block->lock);
-  block->dirty_bit |= ACCESSED;
+  lock_acquire (&sect->lock);
+  sect->dirty_bit |= ACCESSED;
   if (is_metadata)
-    block->dirty_bit |= META;
-  lock_release (&block->lock);
-  return block;
+    sect->dirty_bit |= META;
+  lock_release (&sect->lock);
+  return sect;
 }
 
-/* Performs IO of SIZE bytes between cache block for dist sector at SECTOR_IDX 
+/* Performs IO of SIZE bytes between cache sector for dist sector at SECTOR_IDX 
  * and buffer BUFFER. caches the disk sector if it is not already cached 
  * returns the number of bytes it successfully IOs */
 void
 cache_io_at (block_sector_t sector_idx, void *buffer, 
     bool is_metadata, off_t offset, off_t size, bool is_write)
 {
-  struct cache_block *block = get_sector (sector_idx, is_metadata);
+  struct cache_sector *sect = get_sector (sector_idx, is_metadata);
 
   ASSERT (offset + size <= BLOCK_SECTOR_SIZE);
-  ASSERT (block->state == CACHE_READY);
-  ASSERT (block->sector_idx == sector_idx);
-  ASSERT (block->num_accessors > 0);
+  ASSERT (sect->state == CACHE_READY);
+  ASSERT (sect->sector_idx == sector_idx);
+  ASSERT (sect->num_accessors > 0);
 
   if (!is_write)
-    memcpy (buffer, block->buffer + offset, size);
+    memcpy (buffer, sect->buffer + offset, size);
   else
     {
-      block->dirty_bit |= DIRTY;
-      memcpy (block->buffer + offset, buffer, size);
+      sect->dirty_bit |= DIRTY;
+      memcpy (sect->buffer + offset, buffer, size);
     }
 
-  lock_acquire (&block->lock);
-  block->num_accessors--;
-  if (block->num_accessors == 0)
-    cond_broadcast(&block->being_accessed, &block->lock);
-  lock_release (&block->lock);
+  lock_acquire (&sect->lock);
+  sect->num_accessors--;
+  if (sect->num_accessors == 0)
+    cond_broadcast(&sect->being_accessed, &sect->lock);
+  lock_release (&sect->lock);
   return;
 }
 
-/* Writes all dirty blocks to disk */
+/* Writes all dirty cache sectors to disk */
 void
 cache_write_all (void)
 {

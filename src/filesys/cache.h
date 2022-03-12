@@ -25,7 +25,7 @@ enum cache_info_bit
     META = 0x04
   };
 
-struct cache_block 
+struct cache_sector 
   {
     uint8_t buffer[BLOCK_SECTOR_SIZE];
     int num_accessors;
