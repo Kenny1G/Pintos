@@ -11,25 +11,6 @@ static struct lock clock_lock;
 static struct cache_block cache[CACHE_NUM_SECTORS];
 static int clock_hand;
 
-void
-cache_init (void)
-{
-  lock_init (&clock_lock);
-  clock_hand = CACHE_NUM_SECTORS - 1;
-  for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
-    {
-      cache[i].num_accessors = 0;
-      cache[i].sector_idx = INODE_INVALID_SECTOR;
-      cache[i].is_metadata = false;
-      cache[i].dirty_bit = CLEAN;
-      cache[i].state = CACHE_READY;
-      lock_init(&cache[i].lock);
-      cond_init (&cache[i].being_accessed);
-      cond_init (&cache[i].being_read);
-      cond_init (&cache[i].being_written);
-    }
-}
-
 /* Private helper functions declarations and definitions.*/
 
 struct cache_block *get_sector (block_sector_t sector_idx, bool is_metadata);
@@ -38,7 +19,7 @@ struct cache_block* cache_sector (block_sector_t sector_idx, bool is_metadata);
 struct cache_block* pick_and_evict (void);
 void write_to_disk (struct cache_block *block);
 void read_from_disk (block_sector_t sector_idx, struct cache_block *block, 
-    bool is_metadata);
+                      bool is_metadata);
 
 /* This function finds the next eligible block to evict and returns it, claiming
  * it's lock first
@@ -241,7 +222,8 @@ get_sector (block_sector_t sector_idx, bool is_metadata)
 /* Performs IO of SIZE bytes between cache block for dist sector at SECTOR_IDX 
  * and buffer BUFFER. caches the disk sector if it is not already cached 
  * returns the number of bytes it successfully IOs */
-void cache_io_at (block_sector_t sector_idx, void *buffer, 
+void
+cache_io_at (block_sector_t sector_idx, void *buffer, 
     bool is_metadata, off_t offset, off_t size, bool is_write)
 {
   struct cache_block *block = get_sector (sector_idx, is_metadata);
@@ -265,4 +247,23 @@ void cache_io_at (block_sector_t sector_idx, void *buffer,
     cond_broadcast(&block->being_accessed, &block->lock);
   lock_release (&block->lock);
   return;
+}
+
+void
+cache_init (void)
+{
+  lock_init (&clock_lock);
+  clock_hand = CACHE_NUM_SECTORS - 1;
+  for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
+    {
+      cache[i].num_accessors = 0;
+      cache[i].sector_idx = INODE_INVALID_SECTOR;
+      cache[i].is_metadata = false;
+      cache[i].dirty_bit = CLEAN;
+      cache[i].state = CACHE_READY;
+      lock_init(&cache[i].lock);
+      cond_init (&cache[i].being_accessed);
+      cond_init (&cache[i].being_read);
+      cond_init (&cache[i].being_written);
+    }
 }

@@ -41,5 +41,5 @@ struct cache_block
 
 void cache_init (void);
 void cache_io_at (block_sector_t sector_idx, void *buffer,
-    bool is_metadata, off_t offset, off_t size, bool is_write);
+                  bool is_metadata, off_t offset, off_t size, bool is_write);
 #endif /* filesys/cache.h */
