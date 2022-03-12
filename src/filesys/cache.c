@@ -249,6 +249,18 @@ cache_io_at (block_sector_t sector_idx, void *buffer,
   return;
 }
 
+/* Writes all dirty blocks to disk */
+void
+cache_write_all (void)
+{
+  for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
+    {
+      lock_acquire (&cache[i].lock);
+      write_to_disk (&cache[i]);
+      lock_release (&cache[i].lock);
+    }
+}
+
 void
 cache_init (void)
 {
