@@ -52,6 +52,7 @@ filesys_create (const char *name, off_t initial_size)
 {
   block_sector_t inode_sector = 0;
   struct dir *dir = dir_open_dirs (name);
+  name = dir_parse_filename (name);
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size)
@@ -61,6 +62,40 @@ filesys_create (const char *name, off_t initial_size)
   dir_close (dir);
 
   return success;
+}
+
+/* Creates the directory named PATH, which may be relative or absolute. 
+   Returns true if successful, false on failure. Fails if PATH already exists 
+   or if any directory name in PATH, besides the last, does not already exist. 
+   That is, filesys_mkdir("/a/b/c") succeeds only if /a/b already exists and 
+   /a/b/c does not. */
+bool
+filesys_mkdir (const char *path) 
+{
+  struct dir *parent_dir;
+  const char *dir_name;
+  block_sector_t inode_sector = 0;
+
+  ASSERT (path != NULL);
+
+  parent_dir = dir_open_dirs (path);
+  dir_name = dir_parse_filename (path);
+  bool success = (parent_dir != NULL
+                  && free_map_allocate (1, &inode_sector)
+                  && dir_create (inode_sector, 16)
+                  && dir_add (parent_dir, dir_name, inode_sector));
+  if (!success && inode_sector != 0) 
+    free_map_release (inode_sector, 1);
+  dir_close (parent_dir);
+
+  return success;
+}
+
+/* Wrapper for the dir_close function; Closes open directory DIR. */
+void 
+filesys_closedir (struct dir *dir)
+{
+  dir_close (dir);
 }
 
 /* Opens the file with the given NAME.
@@ -74,6 +109,7 @@ filesys_open (const char *name)
   struct dir *dir = dir_open_dirs (name);
   struct inode *inode = NULL;
 
+  name = dir_parse_filename (name);
   if (dir != NULL)
     dir_lookup (dir, name, &inode);
   dir_close (dir);
@@ -115,6 +151,7 @@ bool
 filesys_remove (const char *name) 
 {
   struct dir *dir = dir_open_dirs (name);
+  name = dir_parse_filename (name);
   bool success = dir != NULL && dir_remove (dir, name);
   dir_close (dir); 
 

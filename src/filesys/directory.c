@@ -94,8 +94,7 @@ dir_open_dirs (const char *filepath)
       if (curr_name_len > NAME_MAX)
         goto fail;
       /* Copy the NULL-terminated current name. */ 
-      strlcpy (curr_name, filepath, curr_name_len);
-      curr_name[curr_name_len] = '\0';
+      strlcpy (curr_name, filepath, curr_name_len + 1);
       /* Lookup the current_name in the parent and fail if not found. */
       if (!dir_lookup (parent_dir, curr_name, &curr_inode))
         goto fail;

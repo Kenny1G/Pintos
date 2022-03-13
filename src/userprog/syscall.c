@@ -271,8 +271,9 @@ syscall_wait (struct intr_frame *f)
   f->eax = exit_code;
 }
 
-/* Changes the current working directory and returns true
-   on success or false on error. */
+/* Changes the current working directory of the process to DIR_PATH,
+   which may be relative or absolute. Returns true if successful,
+   false on failure. */
 static void
 syscall_chdir (struct intr_frame *f)
 {
@@ -283,21 +284,24 @@ syscall_chdir (struct intr_frame *f)
   dir = filesys_opendir (dir_path);
   if (dir != NULL)
     {
-      filesys_close (thread_current ()->cwd);
+      filesys_closedir (thread_current ()->cwd);
       thread_current ()->cwd = dir;
     }
   f->eax = dir != NULL;
 }
 
+/* Creates the directory named DIR_PATH, which may be relative or absolute.
+   Returns true if successful, false on failure. Fails if DIR_PATH already 
+   exists or if any directory name in DIR_PATH, besides the last, does not 
+   already exist. That is, syscall_mkdir("/a/b/c") succeeds only if 
+   /a/b already exists and /a/b/c does not. */
 static void
 syscall_mkdir (struct intr_frame *f)
 {
-  const char *dir = (const char* ) syscall_get_arg (f, 1);
-  syscall_validate_user_string(dir, PGSIZE);
-
-  PANIC ("IMPLEMENT!");
-
-  f->eax = false;
+  const char *dir_path = (const char* ) syscall_get_arg (f, 1);
+  syscall_validate_user_string (dir_path, PGSIZE);
+  
+  f->eax = filesys_mkdir (dir_path);
 }
 
 static void
