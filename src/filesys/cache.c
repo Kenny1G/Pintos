@@ -32,7 +32,7 @@ struct cache_sector *get_sector (block_sector_t sector_idx, bool is_metadata);
 struct cache_sector *sector_lookup (block_sector_t sector_idx);
 struct cache_sector* cache_sector_at (block_sector_t sector_idx, bool is_metadata);
 struct cache_sector* pick_and_evict (void);
-void write_to_disk (struct cache_sector *sect);
+void write_to_disk (struct cache_sector *sect, bool wait);
 void read_from_disk (block_sector_t sector_idx, struct cache_sector *sector, 
                      bool is_metadata);
 static void read_ahead (block_sector_t sector_idx);
@@ -46,7 +46,7 @@ read_asynchronously (void *aux UNUSED)
   struct async_sector_wrapper *a;
   list_init (&side_piece);
 
-  while (true)
+  for (;;)
     {
       lock_acquire (&async_read_lock);
       /* Wait for list to be populated */
@@ -125,7 +125,7 @@ pick_and_evict ()
  * NOTE: the caller of this function must hold the lock to SECT 
  */
 void
-write_to_disk (struct cache_sector *sect)
+write_to_disk (struct cache_sector *sect, bool wait)
 {
   /* Writing a sector to disk is a critical section, no other thread should 
    * access this sector while it is being written to disk. */
@@ -155,8 +155,7 @@ write_to_disk (struct cache_sector *sect)
       sect->state = og_state;
       cond_broadcast (&sect->being_written, &sect->lock);
     }
-  else if (sect->state == CACHE_BEING_WRITTEN ||
-      sect->state == CACHE_PENDING_WRITE)
+  else if (wait)
     {
       /*If this cache sector is already being written to disk, it's not our problem,
        * wait til it's finished then return */
@@ -205,7 +204,7 @@ struct cache_sector*
 cache_sector_at (block_sector_t sector_idx,  bool is_metadata)
 {
   struct cache_sector *sect = pick_and_evict();
-  write_to_disk (sect);
+  write_to_disk (sect, true);
 
   // read from disk
   read_from_disk (sector_idx, sect, is_metadata);
@@ -338,7 +337,7 @@ cache_write_all (void)
   for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
     {
       lock_acquire (&cache[i].lock);
-      write_to_disk (&cache[i]);
+      write_to_disk (&cache[i], true);
       lock_release (&cache[i].lock);
     }
 }
