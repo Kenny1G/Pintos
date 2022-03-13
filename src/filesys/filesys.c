@@ -25,7 +25,8 @@ filesys_init (bool format)
   inode_init ();
   free_map_init ();
 
-  cache_init ();
+  if (!cache_init ())
+    PANIC ("Could not initialize cache");
 
   if (format)
     do_format ();

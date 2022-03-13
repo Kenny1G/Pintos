@@ -421,7 +421,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 
       cache_io_at (sector_idx, (char *) buffer + bytes_read, false, sector_ofs,
                      chunk_size, false);
-
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;

@@ -25,7 +25,7 @@ enum cache_info_bit
     META = 0x04
   };
 
-struct cache_block 
+struct cache_sector 
   {
     uint8_t buffer[BLOCK_SECTOR_SIZE];
     int num_accessors;
@@ -39,8 +39,11 @@ struct cache_block
     struct condition being_written;
   };
 
-void cache_init (void);
+bool cache_init (void);
 void cache_io_at (block_sector_t sector_idx, void *buffer,
                   bool is_metadata, off_t offset, off_t size, bool is_write);
+void cache_io_at_ (block_sector_t sector_idx, void *buffer, bool is_metadata,
+                  off_t offset, off_t size, bool is_write,
+                  block_sector_t sector_next);
 void cache_write_all (void);
 #endif /* filesys/cache.h */
