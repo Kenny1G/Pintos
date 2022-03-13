@@ -29,7 +29,7 @@ static int clock_hand;
 
 
 /* Private helper functions declarations and definitions.*/
-static thread_func read_asynchronously;
+static thread_func async_read;
 static thread_func async_flush;
 struct cache_sector *get_sector (block_sector_t sector_idx, bool is_metadata);
 struct cache_sector *sector_lookup (block_sector_t sector_idx);
@@ -43,7 +43,7 @@ static void read_ahead (block_sector_t sector_idx);
 /* A thread function that asynchronously reads from  disk sectors added to 
  * async_read_list. */
 static void
-read_asynchronously (void *aux UNUSED)
+async_read (void *aux UNUSED)
 {
   struct list side_piece;
   struct async_sector_wrapper *a;
@@ -382,7 +382,7 @@ cache_init (void)
       cond_init (&cache[i].being_written);
     }
 
-  if (thread_create ("cache_async_read", PRI_DEFAULT, read_asynchronously, NULL)
+  if (thread_create ("cache_async_read", PRI_DEFAULT, async_read, NULL)
       == TID_ERROR) return false;
 
   if (thread_create ("cache_async_write", PRI_DEFAULT, async_flush, NULL)
