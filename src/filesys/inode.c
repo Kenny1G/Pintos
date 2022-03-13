@@ -223,8 +223,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (chunk_size <= 0)
         break;
 
-      cache_io_at (sector_idx, buffer + bytes_read, false, sector_ofs,
-                     chunk_size, false);
+      cache_io_at_ (sector_idx, buffer + bytes_read, false, sector_ofs,
+                   chunk_size, false,
+                   byte_to_sector (inode, offset + chunk_size));
       //if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
       //  {
       //    /* Read full sector directly into caller's buffer. */
@@ -286,8 +287,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (chunk_size <= 0)
         break;
 
-      cache_io_at (sector_idx, (void*) buffer + bytes_written, false,
-          sector_ofs, chunk_size, true);
+      cache_io_at_ (sector_idx, (void*) buffer + bytes_written, false,
+                   sector_ofs, chunk_size, true,
+                   byte_to_sector (inode, offset + chunk_size));
 //      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
 //        {
 //          /* Write full sector directly to disk. */

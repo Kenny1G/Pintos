@@ -1,32 +1,33 @@
 #include "cache.h"
 #include <string.h>
-#include "threads/synch.h"
 #include "inode.h"
 #include "debug.h"
 #include "filesys.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
+#include "threads/malloc.h"
 
-/**
+/*
  * Wrapper struct to add next sectors to list of sectors to read in background. 
  */
-static struct async_sector_wrapper 
+struct async_sector_wrapper 
   {
     block_sector_t sector_idx;
     struct list_elem elem;
   };
-/* Lock to ensure only one instance of the clock algorithm runs*/
 
 /* Cache table*/
 static struct cache_sector cache[CACHE_NUM_SECTORS];
-static struct lock clock_lock; 
+static struct lock clock_lock; /* Lock to ensure only one instance of the clock
+                                  algorithm runs*/
 static struct lock async_read_lock;
-/* List of sectors to be cached in the background */
-static struct list async_read_list;
-static thread_func read_asynchronously;
+static struct condition async_list_populated;
+static struct list async_read_list; /* List of sectors to be cached in back*/
 static int clock_hand;
 
 
 /* Private helper functions declarations and definitions.*/
+static thread_func read_asynchronously;
 struct cache_sector *get_sector (block_sector_t sector_idx, bool is_metadata);
 struct cache_sector *sector_lookup (block_sector_t sector_idx);
 struct cache_sector* cache_sector_at (block_sector_t sector_idx, bool is_metadata);
@@ -34,7 +35,44 @@ struct cache_sector* pick_and_evict (void);
 void write_to_disk (struct cache_sector *sect);
 void read_from_disk (block_sector_t sector_idx, struct cache_sector *sector, 
                      bool is_metadata);
-static void read_ahead ();
+static void read_ahead (block_sector_t sector_idx);
+
+/* A thread function that asynchronously reads from  disk sectors added to 
+ * async_read_list. */
+static void
+read_asynchronously (void *aux UNUSED)
+{
+  struct list side_piece;
+  struct async_sector_wrapper *a;
+  list_init (&side_piece);
+
+  while (true)
+    {
+      lock_acquire (&async_read_lock);
+      /* Wait for list to be populated */
+      while (list_empty (&async_read_list))
+        cond_wait (&async_list_populated, &async_read_lock);
+
+      while (!list_empty (&async_read_list))
+        list_push_front (&side_piece, list_pop_back (&async_read_list));
+
+      lock_release (&async_read_lock);
+
+      while (!list_empty (&side_piece))
+        {
+          struct list_elem *e = list_pop_front (&side_piece);
+          a = list_entry (e, struct async_sector_wrapper, elem);
+          struct cache_sector *s = get_sector (a->sector_idx, false);
+
+          lock_acquire (&s->lock);
+          s->num_accessors--;
+          if (s->num_accessors == 0)
+            cond_broadcast(&s->being_accessed, &s->lock);
+          lock_release (&s->lock);
+          free (a);
+        }
+    }
+}
 
 /* This function finds the next eligible cache sector to evict and returns it,
  * claiming it's lock first
@@ -235,6 +273,25 @@ get_sector (block_sector_t sector_idx, bool is_metadata)
   return sect;
 }
 
+/* This function adds sector_idx to the list of sectors to be read in
+ * the background. */
+static void
+read_ahead (block_sector_t sector_idx)
+{
+  if (sector_idx == INODE_INVALID_SECTOR) return;
+
+  lock_acquire (&async_read_lock);
+  struct async_sector_wrapper *a = malloc (sizeof (struct async_sector_wrapper));
+  if (a != NULL)
+    {
+      a->sector_idx = sector_idx;
+      list_push_back (&async_read_list, &a->elem);
+      cond_broadcast (&async_list_populated, &async_read_lock);
+    }
+  lock_release (&async_read_lock);
+
+}
+
 /* Performs IO of SIZE bytes between cache sector for dist sector at SECTOR_IDX 
  * and buffer BUFFER. caches the disk sector if it is not already cached 
  * returns the number of bytes it successfully IOs */
@@ -265,6 +322,15 @@ cache_io_at (block_sector_t sector_idx, void *buffer,
   return;
 }
 
+/* This function solely serves to ensure backward compatibility with existing code*/
+void
+cache_io_at_ (block_sector_t sector_idx, void *buffer, bool is_metadata,
+              off_t offset, off_t size, bool is_write,
+              block_sector_t sector_next)
+{
+  cache_io_at (sector_idx, buffer, is_metadata, offset, size, is_write);
+  read_ahead (sector_next);
+}
 /* Writes all dirty cache sectors to disk */
 void
 cache_write_all (void)
@@ -277,11 +343,18 @@ cache_write_all (void)
     }
 }
 
-void
+bool
 cache_init (void)
 {
-  lock_init (&clock_lock);
   clock_hand = CACHE_NUM_SECTORS - 1;
+  lock_init (&clock_lock);
+  lock_init (&async_read_lock);
+  cond_init (&async_list_populated);
+  list_init (&async_read_list);
+
+  if (thread_create ("cache_async_read", PRI_DEFAULT, read_asynchronously, NULL)
+      == TID_ERROR) return false;
+
   for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
     {
       cache[i].num_accessors = 0;
@@ -294,4 +367,5 @@ cache_init (void)
       cond_init (&cache[i].being_read);
       cond_init (&cache[i].being_written);
     }
+  return true;
 }
