@@ -15,8 +15,6 @@
 #include "devices/input.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
-#include "filesys/directory.h"
-#include "filesys/inode.h"
 #include "vm/page.h"
 
 struct lock syscall_file_lock;  /*Lock to synchronize filesystem access*/
@@ -273,38 +271,22 @@ syscall_wait (struct intr_frame *f)
   f->eax = exit_code;
 }
 
+/* Changes the current working directory and returns true
+   on success or false on error. */
 static void
 syscall_chdir (struct intr_frame *f)
 {
   const char *dir_path = (const char *) syscall_get_arg (f, 1);
-  const char *dir_name;
-  struct dir *dir_parent = NULL, *dir;
-  struct inode *dir_inode = NULL;
+  void *dir;
   syscall_validate_user_string (dir_path, PGSIZE);
 
-  /* Open the parent directory of the queried path. */
-  dir_parent = dir_open_dirs (dir_path);
-  if (dir_parent == NULL)
-    goto fail;
-  /* Inspect the last component in the dir path. */
-  dir_name = dir_parse_filename (dir_path);
-  if (!dir_lookup (dir_parent, dir_name, &dir_inode)
-      || !inode_isdir(dir_inode))
-    goto fail;
-  dir_close (dir_parent);
-  dir = dir_open (dir_inode);
-  /* Update the thread's current working directory. */
-  dir_close (thread_current ()->cwd);
-  thread_current ()->cwd = dir;
-  f->eax = true;
-  return;
-
-fail:
-  /* Free any resources if allocated and returns false. */
-  dir_close (dir_parent);
-  inode_close (dir_inode);
-  f->eax = false;
-  return;
+  dir = filesys_opendir (dir_path);
+  if (dir != NULL)
+    {
+      filesys_close (thread_current ()->cwd);
+      thread_current ()->cwd = dir;
+    }
+  f->eax = dir != NULL;
 }
 
 static void

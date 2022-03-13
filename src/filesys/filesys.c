@@ -81,6 +81,32 @@ filesys_open (const char *name)
   return file_open (inode);
 }
 
+/* Opens and returns the directory at PATH or NULL
+   on error. */
+struct dir *
+filesys_opendir (const char *path)
+{
+  const char *dir_name;
+  struct dir *dir_parent = NULL;
+  struct inode *dir_inode = NULL;
+
+  /* Open the parent directory of the queried path. */
+  dir_parent = dir_open_dirs (path);
+  if (dir_parent == NULL)
+    return NULL;
+  /* Inspect the last component in the dir path. */
+  dir_name = dir_parse_filename (path);
+  if (!dir_lookup (dir_parent, dir_name, &dir_inode)
+      || !inode_isdir(dir_inode))
+    {
+      dir_close (dir_parent);
+      inode_close (dir_inode);
+      return NULL;
+    }
+  dir_close (dir_parent);
+  return dir_open (dir_inode);
+}
+
 /* Deletes the file named NAME.
    Returns true if successful, false on failure.
    Fails if no file named NAME exists,
