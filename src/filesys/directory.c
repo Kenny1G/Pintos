@@ -60,9 +60,10 @@ dir_open_root (void)
 
 /* Opens the directory containing the file at NULL-terminated FILEPATH
    and returns its pointer, or NULL on error. FILEPATH can be a absolute
-   path or relative to the current working directory. */ 
+   path or relative to the current working directory and be made up of
+   arbitrarily many nested directory names. */ 
 struct dir *
-dir_open_basedir (const char *filepath)
+dir_open_dirs (const char *filepath)
 {
   struct dir *parent_dir;
   struct inode *curr_inode;
@@ -182,6 +183,22 @@ dir_lookup (const struct dir *dir, const char *name,
     *inode = NULL;
 
   return *inode != NULL;
+}
+
+/* Returns a pointer to the first character in the 
+   filename component in FILEPATH (i.e. what comes
+   after the last slash in FILEPATH if it exists). */
+const char *
+dir_parse_filename (const char *filepath)
+{
+  const char *filename;
+
+  ASSERT (filepath != NULL);
+  
+  filename = strrchr (filepath, '/');
+  if (filename == NULL)
+    return filepath;  /* FILEPATH is the file name. */
+  return filename + 1;
 }
 
 /* Adds a file named NAME to DIR, which must not already contain a

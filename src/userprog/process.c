@@ -62,6 +62,7 @@ tid_t
 process_execute (const char *file_name)
 {
   tid_t tid;
+  struct thread *curr_t = thread_current ();
 
   struct process_info *p_info = calloc (1, sizeof(struct process_info));
   struct process_child *p_child = calloc (1, sizeof(struct process_child));
@@ -79,7 +80,7 @@ process_execute (const char *file_name)
   p_child->thread = NULL;
   p_info->inparent = p_child;
   lock_acquire (&process_child_lock);
-  list_push_back (&thread_current ()->process_children, &p_child->elem);
+  list_push_back (&curr_t->process_children, &p_child->elem);
   lock_release (&process_child_lock);
 
   /* Make a copy of FILE_NAME (the command line).
@@ -95,7 +96,7 @@ process_execute (const char *file_name)
   /* Parse out program name without modifying str */
   size_t len_prog_name = strcspn(p_info->cmd_line, " ");
   p_info->program_name = calloc (sizeof(char), len_prog_name + 1);
-  p_info->cwd = dir_reopen (thread_current ()->cwd);
+  p_info->cwd = dir_reopen (curr_t->cwd);
   if (p_info->program_name == NULL)
     {
       tid = TID_ERROR;

@@ -15,6 +15,8 @@
 #include "devices/input.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "filesys/directory.h"
+#include "filesys/inode.h"
 #include "vm/page.h"
 
 struct lock syscall_file_lock;  /*Lock to synchronize filesystem access*/
@@ -91,6 +93,11 @@ static void syscall_halt (struct intr_frame *);
 static void syscall_exit (struct intr_frame *);
 static void syscall_exec (struct intr_frame *);
 static void syscall_wait (struct intr_frame *);
+static void syscall_chdir (struct intr_frame *f);
+static void syscall_mkdir (struct intr_frame *f);
+static void syscall_readdir (struct intr_frame *f);
+static void syscall_isdir (struct intr_frame *f);
+static void syscall_inumber (struct intr_frame *f);
 static void syscall_create (struct intr_frame *);
 static void syscall_remove (struct intr_frame *);
 static void syscall_open (struct intr_frame *);
@@ -125,6 +132,12 @@ syscall_init (void)
   syscall_handlers[SYS_CURMEM] = syscall_curmem;
   syscall_handlers[SYS_MMAP] = syscall_mmap;
   syscall_handlers[SYS_MUNMAP] = syscall_munmap;
+  syscall_handlers[SYS_CHDIR] = syscall_chdir;
+  syscall_handlers[SYS_MKDIR] = syscall_mkdir;
+  syscall_handlers[SYS_READDIR] = syscall_readdir;
+  syscall_handlers[SYS_ISDIR] = syscall_isdir;
+  syscall_handlers[SYS_INUMBER] = syscall_inumber;
+  
   barrier ();  /* Write all handlers before starting syscalls. */
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 
@@ -258,6 +271,83 @@ syscall_wait (struct intr_frame *f)
   tid_t tid = syscall_get_arg (f, 1);
   int32_t exit_code = process_wait (tid);
   f->eax = exit_code;
+}
+
+static void
+syscall_chdir (struct intr_frame *f)
+{
+  const char *dir_path = (const char *) syscall_get_arg (f, 1);
+  const char *dir_name;
+  struct dir *dir_parent = NULL, *dir;
+  struct inode *dir_inode = NULL;
+  syscall_validate_user_string (dir_path, PGSIZE);
+
+  /* Open the parent directory of the queried path. */
+  dir_parent = dir_open_dirs (dir_path);
+  if (dir_parent == NULL)
+    goto fail;
+  /* Inspect the last component in the dir path. */
+  dir_name = dir_parse_filename (dir_path);
+  if (!dir_lookup (dir_parent, dir_name, &dir_inode)
+      || !inode_isdir(dir_inode))
+    goto fail;
+  dir_close (dir_parent);
+  dir = dir_open (dir_inode);
+  /* Update the thread's current working directory. */
+  dir_close (thread_current ()->cwd);
+  thread_current ()->cwd = dir;
+  f->eax = true;
+  return;
+
+fail:
+  /* Free any resources if allocated and returns false. */
+  dir_close (dir_parent);
+  inode_close (dir_inode);
+  f->eax = false;
+  return;
+}
+
+static void
+syscall_mkdir (struct intr_frame *f)
+{
+  const char *dir = (const char* ) syscall_get_arg (f, 1);
+  syscall_validate_user_string(dir, PGSIZE);
+
+  PANIC ("IMPLEMENT!");
+
+  f->eax = false;
+}
+
+static void
+syscall_readdir (struct intr_frame *f)
+{
+  int32_t fd = syscall_get_arg (f, 1);
+  const char *name = (const char* ) syscall_get_arg (f, 2);
+  syscall_validate_user_string(name, PGSIZE);
+
+  PANIC ("IMPLEMENT!");
+
+  f->eax = false;
+}
+
+static void
+syscall_isdir (struct intr_frame *f)
+{
+  int32_t fd = syscall_get_arg (f, 1);
+
+  PANIC ("IMPLEMENT!");
+
+  f->eax = false;
+}
+
+static void
+syscall_inumber (struct intr_frame *f)
+{
+  int32_t fd = syscall_get_arg (f, 1);
+
+  PANIC ("IMPLEMENT!");
+
+  f->eax = 0;
 }
 
 static void
