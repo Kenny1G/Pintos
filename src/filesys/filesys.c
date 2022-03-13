@@ -7,6 +7,7 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 #include "filesys/cache.h"
+#include "threads/thread.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
@@ -31,6 +32,7 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
+  thread_current ()->cwd = dir_open_root ();
 }
 
 /* Shuts down the file system module, writing any unwritten data
