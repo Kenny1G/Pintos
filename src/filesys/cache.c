@@ -3,10 +3,12 @@
 #include "inode.h"
 #include "debug.h"
 #include "filesys.h"
+#include "devices/timer.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include "threads/malloc.h"
 
+#define TIME_BETWEEN_FLUSH 30000
 /*
  * Wrapper struct to add next sectors to list of sectors to read in background. 
  */
@@ -28,6 +30,7 @@ static int clock_hand;
 
 /* Private helper functions declarations and definitions.*/
 static thread_func read_asynchronously;
+static thread_func async_flush;
 struct cache_sector *get_sector (block_sector_t sector_idx, bool is_metadata);
 struct cache_sector *sector_lookup (block_sector_t sector_idx);
 struct cache_sector* cache_sector_at (block_sector_t sector_idx, bool is_metadata);
@@ -70,6 +73,21 @@ read_asynchronously (void *aux UNUSED)
             cond_broadcast(&s->being_accessed, &s->lock);
           lock_release (&s->lock);
           free (a);
+        }
+    }
+}
+
+static void
+async_flush (void *aux UNUSED)
+{
+  for (;;)
+    {
+      timer_msleep (TIME_BETWEEN_FLUSH);
+      for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
+        {
+          lock_acquire (&cache[i].lock);
+          write_to_disk (&cache[i], false);
+          lock_release (&cache[i].lock);
         }
     }
 }
@@ -351,9 +369,6 @@ cache_init (void)
   cond_init (&async_list_populated);
   list_init (&async_read_list);
 
-  if (thread_create ("cache_async_read", PRI_DEFAULT, read_asynchronously, NULL)
-      == TID_ERROR) return false;
-
   for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
     {
       cache[i].num_accessors = 0;
@@ -366,5 +381,12 @@ cache_init (void)
       cond_init (&cache[i].being_read);
       cond_init (&cache[i].being_written);
     }
+
+  if (thread_create ("cache_async_read", PRI_DEFAULT, read_asynchronously, NULL)
+      == TID_ERROR) return false;
+
+  if (thread_create ("cache_async_write", PRI_DEFAULT, async_flush, NULL)
+      == TID_ERROR) return false;
+
   return true;
 }
