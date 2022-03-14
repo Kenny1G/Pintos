@@ -227,6 +227,11 @@ inode_close (struct inode *inode)
     }
 }
 
+/* TODO - remove */
+bool inode_isdir (const struct inode *inode) { 
+  return false;
+}
+
 /* Marks INODE to be deleted when it is closed by the last caller who
    has it open. */
 void

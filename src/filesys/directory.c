@@ -4,6 +4,7 @@
 #include <list.h>
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
+#include "threads/thread.h"
 #include "threads/malloc.h"
 
 /* A directory. */
@@ -55,6 +56,57 @@ struct dir *
 dir_open_root (void)
 {
   return dir_open (inode_open (ROOT_DIR_SECTOR));
+}
+
+/* Opens the directory containing the file at NULL-terminated FILEPATH
+   and returns its pointer, or NULL on error. FILEPATH can be a absolute
+   path or relative to the current working directory and be made up of
+   arbitrarily many nested directory names. */ 
+struct dir *
+dir_open_dirs (const char *filepath)
+{
+  struct dir *parent_dir;
+  struct inode *curr_inode;
+  const char *next_slash;
+  char curr_name[NAME_MAX + 1];
+  size_t curr_name_len;
+
+  ASSERT (filepath != NULL);
+
+  /* Start with the root dir if FILEPATH is absolute or CWD otherwise. */
+  if (filepath[0] == '/')
+    {
+      parent_dir = dir_open_root();
+      filepath++;  /* Skip the root slash. */
+    }
+  else
+    {
+      parent_dir = dir_reopen (thread_current ()->cwd);
+    }
+  if (parent_dir == NULL)
+    goto fail;
+  /* Keep traversing FILEPATH until there are no more trailing slashes. */
+  while ((next_slash = strchr (filepath, '/'))
+         && *(next_slash + 1) != '\0')
+    {
+      curr_name_len = next_slash - filepath;
+      /* Fail is the current name is larger than supported. */
+      if (curr_name_len > NAME_MAX)
+        goto fail;
+      /* Copy the NULL-terminated current name. */ 
+      strlcpy (curr_name, filepath, curr_name_len + 1);
+      /* Lookup the current_name in the parent and fail if not found. */
+      if (!dir_lookup (parent_dir, curr_name, &curr_inode))
+        goto fail;
+      /* Update the state to reflect the current step of path traversal. */
+      dir_close (parent_dir);
+      parent_dir = dir_open (curr_inode);
+      filepath = next_slash + 1;
+    }
+  return parent_dir;
+fail:
+  dir_close (parent_dir);
+  return NULL;
 }
 
 /* Opens and returns a new directory for the same inode as DIR.
@@ -130,6 +182,22 @@ dir_lookup (const struct dir *dir, const char *name,
     *inode = NULL;
 
   return *inode != NULL;
+}
+
+/* Returns a pointer to the first character in the 
+   filename component in FILEPATH (i.e. what comes
+   after the last slash in FILEPATH if it exists). */
+const char *
+dir_parse_filename (const char *filepath)
+{
+  const char *filename;
+
+  ASSERT (filepath != NULL);
+  
+  filename = strrchr (filepath, '/');
+  if (filename == NULL)
+    return filepath;  /* FILEPATH is the file name. */
+  return filename + 1;
 }
 
 /* Adds a file named NAME to DIR, which must not already contain a

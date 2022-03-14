@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include "threads/malloc.h"
 #ifdef FILESYS
-#include "filesys/file.h"
+#include "filesys/filesys.h"
 #endif
 
 /* Element type.
@@ -338,13 +338,13 @@ bitmap_file_size (const struct bitmap *b)
 /* Reads B from FILE.  Returns true if successful, false
    otherwise. */
 bool
-bitmap_read (struct bitmap *b, struct file *file) 
+bitmap_read (struct bitmap *b, void *file) 
 {
   bool success = true;
   if (b->bit_cnt > 0) 
     {
       off_t size = byte_cnt (b->bit_cnt);
-      success = file_read_at (file, b->bits, size, 0) == size;
+      success = filesys_read_at (file, b->bits, size, 0) == size;
       b->bits[elem_cnt (b->bit_cnt) - 1] &= last_mask (b);
     }
   return success;
@@ -353,10 +353,10 @@ bitmap_read (struct bitmap *b, struct file *file)
 /* Writes B to FILE.  Return true if successful, false
    otherwise. */
 bool
-bitmap_write (const struct bitmap *b, struct file *file)
+bitmap_write (const struct bitmap *b, void *file)
 {
   off_t size = byte_cnt (b->bit_cnt);
-  return file_write_at (file, b->bits, size, 0) == size;
+  return filesys_write_at (file, b->bits, size, 0) == size;
 }
 #endif /* FILESYS */
 
