@@ -14,7 +14,7 @@
 /* Indexed Inodes Constants */
 // Number of Blocks
 #define INODE_NUM_BLOCKS 125
-#define INODE_NUM_DIRECT 124
+#define INODE_NUM_DIRECT 123
 //todo(kenny) rename to num_sectors in ind block
 #define INODE_NUM_IN_IND_BLOCK 128
 
@@ -28,6 +28,7 @@ struct inode_disk
     block_sector_t indirect_block;
     block_sector_t dubindirect_block;
 
+    bool is_dir;
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
   };
@@ -227,9 +228,8 @@ inode_close (struct inode *inode)
     }
 }
 
-/* TODO - remove */
 bool inode_isdir (const struct inode *inode) { 
-  return false;
+  return inode->data.is_dir;
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
