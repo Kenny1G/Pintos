@@ -228,3 +228,17 @@ filesys_filesize (struct file *file)
 {
   return file_length (file);
 }
+
+/* Wrapper for file_read_at. */
+off_t 
+filesys_read_at (struct file *file, void *buffer, off_t size, off_t start)
+{
+  return file_read_at (file, buffer, size, start);
+}
+
+/* Wrapper for file_write_at. */
+off_t filesys_write_at (struct file *file, const void *buffer, 
+                        off_t size, off_t start)
+{
+  return file_write_at (file, buffer, size, start);
+}

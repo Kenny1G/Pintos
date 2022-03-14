@@ -14,7 +14,6 @@
 #include "devices/shutdown.h"
 #include "devices/input.h"
 #include "filesys/filesys.h"
-#include "filesys/file.h"
 #include "vm/page.h"
 
 /* Array of syscall handler functions to dispatch on interrupt. */

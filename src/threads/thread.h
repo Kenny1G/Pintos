@@ -125,8 +125,8 @@ struct thread
     mapid_t mmap_next_id;               /* Next availabnle mmap id */
 
     /* File system */
-    struct file* exec_file;             /* The file that spawned this process*/
-    struct dir* cwd;                    /* Inherited current working directory.
+    void* exec_file;             /* The file that spawned this process*/
+    void* cwd;                    /* Inherited current working directory.
                                            Initialized by filesys_init. */
     struct list process_fd_table;       /* List of this process' file
                                            descriptors. */
