@@ -309,6 +309,44 @@ read_ahead (block_sector_t sector_idx)
 
 }
 
+static void
+cache_direct_io_at (block_sector_t sector_idx, void *buffer,
+                          off_t offset, off_t size, bool is_write)
+{
+  uint8_t *bounce =  malloc (BLOCK_SECTOR_SIZE);
+  if (bounce == NULL) return;
+  if (is_write)
+  {
+    if (offset == 0 && size == BLOCK_SECTOR_SIZE)
+    {
+      /* Write full sector directly to disk. */
+      block_write (fs_device, sector_idx, buffer);
+    }
+    else 
+    {
+      block_read (fs_device, sector_idx, bounce);
+      memcpy (bounce + offset , buffer, size);
+      block_write (fs_device, sector_idx, bounce);
+    }
+  }
+  else
+  {
+    if (offset == 0 && size == BLOCK_SECTOR_SIZE)
+      {
+        /* Read full sector directly into caller's buffer. */
+        block_read (fs_device, sector_idx, buffer);
+      }
+    else 
+      {
+        /* Read sector into bounce buffer, then partially copy
+           into caller's buffer. */
+        block_read (fs_device, sector_idx, bounce);
+        memcpy (buffer, bounce + offset, size);
+      }
+  }
+  free (bounce);
+}
+
 /* Performs IO of SIZE bytes between cache sector for dist sector at SECTOR_IDX 
  * and buffer BUFFER. caches the disk sector if it is not already cached 
  * returns the number of bytes it successfully IOs */
