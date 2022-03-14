@@ -71,7 +71,8 @@ filesys_create (const char *path, off_t initial_size)
 bool
 filesys_mkdir (const char *path) 
 {
-  struct dir *parent_dir;
+  struct dir *parent_dir = NULL, *dir = NULL;
+  struct inode *inode = NULL;
   const char *dir_name;
   block_sector_t inode_sector = 0;
 
@@ -79,15 +80,34 @@ filesys_mkdir (const char *path)
 
   parent_dir = dir_open_dirs (path);
   dir_name = dir_parse_filename (path);
-  bool success = (parent_dir != NULL
-                  && free_map_allocate (1, &inode_sector)
-                  && dir_create (inode_sector, 16)
-                  && dir_add (parent_dir, dir_name, inode_sector));
-  if (!success && inode_sector != 0) 
-    free_map_release (inode_sector, 1);
+  if (parent_dir == NULL
+      || !free_map_allocate (1, &inode_sector)
+      || !dir_create (inode_sector, 16))
+    goto fail;
+  /* dir inode created successfully. Now link the dirs. */
+  inode = inode_open (inode_sector);
+  if (inode == NULL)
+    goto fail;
+  dir = dir_open (inode);
+  if (dir == NULL
+      || !dir_add (dir, "..", inode_get_inumber (dir_get_inode (parent_dir)))
+      || !dir_add (dir, ".", inode_sector)
+      || !dir_add (parent_dir, dir_name, inode_sector))
+    goto fail;
+  dir_close (dir);
   dir_close (parent_dir);
+  return true;
 
-  return success;
+fail:
+  if (dir != NULL)
+    dir_close (dir);
+  if (inode != NULL)
+    inode_remove (inode);
+  else if (inode_sector != 0)
+    free_map_release (inode_sector, 1);
+  if (parent_dir != NULL)
+    dir_close (parent_dir);
+  return false;
 }
 
 /* Reads a directory entry from DIR. If successful, 
