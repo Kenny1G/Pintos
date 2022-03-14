@@ -8,8 +8,6 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
-#include "filesys/directory.h"
-#include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
 #include "threads/init.h"
@@ -26,7 +24,6 @@
 /* Processes acquire this lock when modifying their parent or children
  to prevent race conditions when multiple processes exit at the same time. */
 static struct lock process_child_lock;
-extern struct lock syscall_file_lock;
 
 /* Used to pass info concerning the process' name and arguments from
    process_execute() to start_process() to load(). Also holds a
@@ -203,19 +200,24 @@ start_process (void *process_info)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-  lock_acquire (&syscall_file_lock);
   /* Open the file and prevent writes */
-  struct file* file = filesys_open (p_info->program_name);
-  if (file != NULL) file_deny_write (file);
+  struct file* file = filesys_open (p_info->program_name, NULL);
+  if (file != NULL) filesys_deny_write (file);
 
   success = load (p_info, &if_.eip, &if_.esp);
+
+  /* Setup the process's system calls infrastructure.
+     syscall_process_done () must be called later to free resources. */
+  cur->fd_table_ready = false;
+  success = success && syscall_process_init ();
+
   sema_up (&p_info->loaded);
-  lock_release (&syscall_file_lock);
 
   /* If load failed, quit. */
   if (!success)
     {
       if (file != NULL) file_allow_write (file);
+      syscall_process_done ();
       thread_current ()->process_exit_code = -1;
       thread_exit ();
     }
@@ -317,23 +319,12 @@ process_exit (void)
   /* Allow writes to the exec file again */
   if (cur->exec_file != NULL)
   {
-    file_allow_write (cur->exec_file);
-    lock_acquire (&syscall_file_lock);
-    file_close (cur->exec_file);
-    lock_release  (&syscall_file_lock);
+    filesys_allow_write (cur->exec_file);
+    filesys_close (cur->exec_file);
   }
 
-  /* Close open file descriptors */
-  struct list* fd_table = &thread_current()->process_fd_table;
-  struct process_fd *fd;
-  size_t n = list_size (fd_table);
-  struct list_elem *e = list_begin (fd_table);
-  for (size_t i = 0; i < n; ++i)
-    {
-      fd = list_entry (e, struct process_fd, list_elem);
-      e = list_next (e);
-      syscall_close_helper (fd->id);
-    }
+  /* Free up the syscall resources including open file descriptors. */
+  syscall_process_done ();
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -460,7 +451,7 @@ load (struct process_info *p_info, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (p_info->program_name);
+  file = filesys_open (p_info->program_name, NULL);
   if (file == NULL)
     {
       printf ("load: %s: open failed\n", p_info->program_name);

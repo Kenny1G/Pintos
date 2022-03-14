@@ -182,9 +182,3 @@ inumber (int fd)
 {
   return syscall1 (SYS_INUMBER, fd);
 }
-
-unsigned
-curmem ()
-{
-  return syscall0 (SYS_CURMEM);
-}

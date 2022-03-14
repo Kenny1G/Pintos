@@ -2,10 +2,8 @@
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
-#include "filesys/file.h"
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
-#include "filesys/directory.h"
 #include "filesys/cache.h"
 #include "threads/thread.h"
 
@@ -42,17 +40,18 @@ filesys_done (void)
 {
   free_map_close ();
 }
-
-/* Creates a file named NAME with the given INITIAL_SIZE.
+
+/* Creates a file at PATH with the given INITIAL_SIZE.
    Returns true if successful, false otherwise.
    Fails if a file named NAME already exists,
+   or if PATH contain non-existent dirs,
    or if internal memory allocation fails. */
 bool
-filesys_create (const char *name, off_t initial_size) 
+filesys_create (const char *path, off_t initial_size) 
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_dirs (name);
-  name = dir_parse_filename (name);
+  struct dir *dir = dir_open_dirs (path);
+  const char *name = dir_parse_filename (path);
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size)
@@ -91,56 +90,53 @@ filesys_mkdir (const char *path)
   return success;
 }
 
-/* Wrapper for the dir_close function; Closes open directory DIR. */
-void 
-filesys_closedir (struct dir *dir)
+/* Reads a directory entry from DIR. If successful, 
+   stores the null-terminated file name in NAME,
+   which must have room for READDIR_MAX_LEN + 1 bytes, and returns true. 
+   If no entries are left in the directory, returns false. */
+bool
+filesys_readdir (struct dir *dir, char *name) 
 {
-  dir_close (dir);
+  ASSERT (name != NULL && dir != NULL);
+  return dir_readdir (dir, name);
 }
 
-/* Opens the file with the given NAME.
-   Returns the new file if successful or a null pointer
-   otherwise.
-   Fails if no file named NAME exists,
-   or if an internal memory allocation fails. */
-struct file *
-filesys_open (const char *name)
+/* Opens the file/dir with the given PATH. 
+   Sets *ISDIR according to what is found at PATH if ISDIR is not NULL.
+   Returns the new file/dir if successful or a null pointer otherwise.
+   Fails if PATH doesn't exist, or if an internal memory allocation fails. */
+void *
+filesys_open (const char *path, bool *isdir)
 {
-  struct dir *dir = dir_open_dirs (name);
+  struct dir *dir;
+  const char *name;
   struct inode *inode = NULL;
 
-  name = dir_parse_filename (name);
+  ASSERT (path != NULL);
+
+  dir = dir_open_dirs (path);
+  name = dir_parse_filename (path);
   if (dir != NULL)
     dir_lookup (dir, name, &inode);
   dir_close (dir);
-
-  return file_open (inode);
+  if (isdir != NULL)
+    *isdir = inode_isdir (inode);
+  return inode_isdir (inode) ? (void *) dir_open (inode) 
+                             : (void *) file_open (inode);
 }
 
-/* Opens and returns the directory at PATH or NULL
-   on error. */
-struct dir *
-filesys_opendir (const char *path)
+/* Returns the inumber of directory DIR. */
+int 
+filesys_dir_inumber (struct dir *dir)
 {
-  const char *dir_name;
-  struct dir *dir_parent = NULL;
-  struct inode *dir_inode = NULL;
+  return inode_get_inumber (dir_get_inode (dir));
+}
 
-  /* Open the parent directory of the queried path. */
-  dir_parent = dir_open_dirs (path);
-  if (dir_parent == NULL)
-    return NULL;
-  /* Inspect the last component in the dir path. */
-  dir_name = dir_parse_filename (path);
-  if (!dir_lookup (dir_parent, dir_name, &dir_inode)
-      || !inode_isdir(dir_inode))
-    {
-      dir_close (dir_parent);
-      inode_close (dir_inode);
-      return NULL;
-    }
-  dir_close (dir_parent);
-  return dir_open (dir_inode);
+/* Returns the inumber of file FILE. */
+int 
+filesys_file_inumber (struct file *file)
+{
+  return inode_get_inumber (file_get_inode (file));
 }
 
 /* Deletes the file named NAME.
@@ -157,7 +153,7 @@ filesys_remove (const char *name)
 
   return success;
 }
-
+
 /* Formats the file system. */
 static void
 do_format (void)
@@ -168,4 +164,67 @@ do_format (void)
     PANIC ("root directory creation failed");
   free_map_close ();
   printf ("done.\n");
+}
+
+/* Wrapper for file_read. */
+off_t 
+filesys_read (struct file *file, void *buffer, off_t size)
+{
+  return file_read (file, buffer, size);
+}
+
+/* Wrapper for file_write. */
+off_t 
+filesys_write (struct file *file, const void *buffer, off_t size)
+{
+  return file_write (file, buffer, size);
+}
+
+/* Wrapper for file_seek. */
+void 
+filesys_seek (struct file *file, off_t position)
+{
+  file_seek (file, position);
+}
+
+/* Wrapper for file_tell. */
+off_t 
+filesys_tell (struct file *file)
+{
+  return file_tell (file);
+}
+
+/* Wrapper for file_deny_write. */
+void 
+filesys_deny_write (struct file *file)
+{
+  file_deny_write (file);
+}
+
+/* Wrapper for file_allow_write. */
+void 
+filesys_allow_write (struct file *file)
+{
+  file_allow_write (file);
+}
+
+/* Wrapper for dir_close. */
+void 
+filesys_closedir (struct dir *dir)
+{
+  dir_close (dir);
+}
+
+/* Wrapper for file_close. */
+void 
+filesys_close (struct file *file)
+{
+  file_close (file);
+}
+
+/* Wrapper for file_length. */
+int 
+filesys_filesize (struct file *file)
+{
+  return file_length (file);
 }

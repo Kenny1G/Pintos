@@ -131,6 +131,11 @@ struct thread
     struct list process_fd_table;       /* List of this process' file
                                            descriptors. */
     int process_fd_next;                /* ID to be assigned to next fd */
+    /* Owened by userprog/syscall.c */
+    bool fd_table_ready;                /* Won't free up the following
+                                           resources if not ready. */
+    struct hash fd_table;               /* Open file descriptors table. */
+    int fd_next;                        /* ID to be assigned to next fd */
 #endif
 
     int64_t wake_tick;                  /* Number of ticks left to sleep*/
