@@ -346,7 +346,7 @@ cache_io_at_ (block_sector_t sector_idx, void *buffer, bool is_metadata,
               block_sector_t sector_next)
 {
   cache_io_at (sector_idx, buffer, is_metadata, offset, size, is_write);
-  read_ahead (sector_next);
+  // read_ahead (sector_next);
 }
 /* Writes all dirty cache sectors to disk */
 void

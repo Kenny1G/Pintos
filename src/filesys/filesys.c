@@ -56,7 +56,7 @@ filesys_create (const char *path, off_t initial_size)
   const char *name = dir_parse_filename (path);
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size)
+                  && inode_create (inode_sector, initial_size, false)
                   && dir_add (dir, name, inode_sector));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
@@ -133,14 +133,20 @@ filesys_open (const char *path, bool *isdir)
   struct dir *dir;
   const char *name;
   struct inode *inode = NULL;
+  bool found = false;
 
   ASSERT (path != NULL);
 
   dir = dir_open_dirs (path);
-  name = dir_parse_filename (path);
+  if (!strcmp (path, "/"))
+    name = ".";  /* The root directory doesn't have a name by default. */
+  else
+    name = dir_parse_filename (path);
   if (dir != NULL)
-    dir_lookup (dir, name, &inode);
+    found = dir_lookup (dir, name, &inode);
   dir_close (dir);
+  if (!found)
+    return NULL;
   if (isdir != NULL)
     *isdir = inode_isdir (inode);
   return inode_isdir (inode) ? (void *) dir_open (inode) 
@@ -161,18 +167,18 @@ filesys_file_inumber (struct file *file)
   return inode_get_inumber (file_get_inode (file));
 }
 
-/* Deletes the file named NAME.
+/* Deletes the file/dir at PATH.
    Returns true if successful, false on failure.
-   Fails if no file named NAME exists,
+   Fails if PATH does not exist,
+   or if PATH is an open directory,
    or if an internal memory allocation fails. */
 bool
-filesys_remove (const char *name) 
+filesys_remove (const char *path) 
 {
-  struct dir *dir = dir_open_dirs (name);
-  name = dir_parse_filename (name);
+  struct dir *dir = dir_open_dirs (path);
+  const char *name = dir_parse_filename (path);
   bool success = dir != NULL && dir_remove (dir, name);
   dir_close (dir); 
-
   return success;
 }
 

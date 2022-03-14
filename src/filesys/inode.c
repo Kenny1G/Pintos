@@ -97,7 +97,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, bool isdir)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -113,7 +113,7 @@ inode_create (block_sector_t sector, off_t length)
     {
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
-      disk_inode->is_dir = false;
+      disk_inode->is_dir = isdir;
       /* old way write inode at first sector at fill rest with 0*/
       //size_t sectors = bytes_to_sectors (length);
       //if (free_map_allocate (sectors, &disk_inode->start)) 
@@ -193,6 +193,13 @@ inode_reopen (struct inode *inode)
   if (inode != NULL)
     inode->open_cnt++;
   return inode;
+}
+
+/* Returns the number of open instances of INODE. */
+int 
+inode_open_count (struct inode *inode)
+{
+  return inode->open_cnt;
 }
 
 /* Returns INODE's inode number. */

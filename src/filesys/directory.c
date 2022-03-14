@@ -27,7 +27,7 @@ struct dir_entry
 bool
 dir_create (block_sector_t sector, size_t entry_cnt)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry));
+  return inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -39,7 +39,7 @@ dir_open (struct inode *inode)
   if (inode != NULL && dir != NULL)
     {
       dir->inode = inode;
-      dir->pos = 0;
+      dir->pos = 2 * sizeof (struct dir_entry); /* Skip . and .. */
       return dir;
     }
   else
@@ -254,6 +254,7 @@ dir_remove (struct dir *dir, const char *name)
 {
   struct dir_entry e;
   struct inode *inode = NULL;
+  struct dir *dir_removed = NULL;
   bool success = false;
   off_t ofs;
 
@@ -264,10 +265,23 @@ dir_remove (struct dir *dir, const char *name)
   if (!lookup (dir, name, &e, &ofs))
     goto done;
 
-  /* Open inode. */
+  /* Open inode and fail on error. */
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
+
+  /* In the case where inode is a dir, check that it's empty and not open. */
+  if (inode_isdir (inode))
+    {
+      /* Attempt to open the dir and fail otherwise. */
+      dir_removed = dir_open (inode);
+      if (dir_removed == NULL)
+        goto done;
+      /* Check that the dir is not open anywhere else and that it's empty. */
+      if ((inode_open_count (inode) > 1)
+          || !dir_empty (dir_removed))
+        goto done;
+    }
 
   /* Erase directory entry. */
   e.in_use = false;
@@ -279,7 +293,10 @@ dir_remove (struct dir *dir, const char *name)
   success = true;
 
  done:
-  inode_close (inode);
+  if (dir_removed != NULL)
+    dir_close (dir_removed);
+  else if (inode != NULL)
+    inode_close (inode);
   return success;
 }
 
@@ -301,4 +318,24 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         } 
     }
   return false;
+}
+
+/* Returns true if DIR is empty (except for subdirs . and ..) and 
+   false otherwise. */
+bool 
+dir_empty (struct dir *dir)
+{
+  struct dir_entry e;
+  size_t ofs;
+  
+  ASSERT (dir != NULL);
+
+  for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+       ofs += sizeof e) 
+    /* Check if the entry is in_use and neither . nor .. */
+    if (e.in_use && strcmp (".", e.name) && strcmp ("..", e.name))
+      {
+        return false;
+      }
+  return true;
 }
