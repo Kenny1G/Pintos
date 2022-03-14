@@ -90,14 +90,18 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->magic = INODE_MAGIC;
       if (free_map_allocate (sectors, &disk_inode->start)) 
         {
-          block_write (fs_device, sector, disk_inode);
+          //block_write (fs_device, sector, disk_inode);
+          cache_io_at (sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
           if (sectors > 0) 
             {
               static char zeros[BLOCK_SECTOR_SIZE];
               size_t i;
               
               for (i = 0; i < sectors; i++) 
-                block_write (fs_device, disk_inode->start + i, zeros);
+              {
+                //block_write (fs_device, disk_inode->start + i, zeros);
+                cache_io_at (disk_inode->start + i, zeros, true, 0, BLOCK_SECTOR_SIZE, true);
+              }
             }
           success = true; 
         } 
