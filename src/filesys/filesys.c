@@ -178,10 +178,24 @@ filesys_remove (const char *name)
 static void
 do_format (void)
 {
+  struct inode *root_inode;
+  struct dir *root_dir;
+
   printf ("Formatting file system...");
   free_map_create ();
   if (!dir_create (ROOT_DIR_SECTOR, 16))
     PANIC ("root directory creation failed");
+  /* Open the created root directory. */
+  root_inode = inode_open (ROOT_DIR_SECTOR);
+  if (root_inode == NULL)
+    PANIC ("root directory creation failed");
+  root_dir = dir_open (root_inode);
+  /* Create the initial . and .. root subdirectories. */
+  if (root_dir == NULL
+      || !dir_add (root_dir, "..", ROOT_DIR_SECTOR)
+      || !dir_add (root_dir, ".", ROOT_DIR_SECTOR))
+    PANIC ("root directory creation failed");
+  dir_close (root_dir);
   free_map_close ();
   printf ("done.\n");
 }
