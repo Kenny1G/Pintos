@@ -113,6 +113,7 @@ inode_create (block_sector_t sector, off_t length)
     {
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
+      disk_inode->is_dir = false;
       /* old way write inode at first sector at fill rest with 0*/
       //size_t sectors = bytes_to_sectors (length);
       //if (free_map_allocate (sectors, &disk_inode->start)) 
@@ -228,8 +229,17 @@ inode_close (struct inode *inode)
     }
 }
 
-bool inode_isdir (const struct inode *inode) { 
+bool
+inode_isdir (const struct inode *inode)
+{ 
   return inode->data.is_dir;
+}
+
+void
+inode_setdir (struct inode *inode)
+{ 
+  inode->data.is_dir = true;
+  cache_io_at (inode->sector, &inode->data, true, 0, BLOCK_SECTOR_SIZE, true);
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
