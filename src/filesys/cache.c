@@ -3,6 +3,7 @@
 #include "inode.h"
 #include "debug.h"
 #include "filesys.h"
+<<<<<<< HEAD
 #include "devices/timer.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
@@ -25,16 +26,41 @@ static struct lock clock_lock; /* Lock to ensure only one instance of the clock
 static struct lock async_read_lock;
 static struct condition async_list_populated;
 static struct list async_read_list; /* List of sectors to be cached in back*/
+=======
+#include "threads/thread.h"
+
+/**
+ * Wrapper struct to add next sectors to list of sectors to read in background. 
+ */
+static struct async_sector_wrapper 
+  {
+    block_sector_t sector_idx;
+    struct list_elem elem;
+  };
+/* Lock to ensure only one instance of the clock algorithm runs*/
+
+/* Cache table*/
+static struct cache_sector cache[CACHE_NUM_SECTORS];
+static struct lock clock_lock; 
+static struct lock async_read_lock;
+/* List of sectors to be cached in the background */
+static struct list async_read_list;
+static thread_func read_asynchronously;
+>>>>>>> 1e8d401 (Rename all instances of block to sector cause cache is divided into sectors not blocks)
 static int clock_hand;
 
 
 /* Private helper functions declarations and definitions.*/
+<<<<<<< HEAD
 static thread_func async_read;
 static thread_func async_flush;
+=======
+>>>>>>> 1e8d401 (Rename all instances of block to sector cause cache is divided into sectors not blocks)
 struct cache_sector *get_sector (block_sector_t sector_idx, bool is_metadata);
 struct cache_sector *sector_lookup (block_sector_t sector_idx);
 struct cache_sector* cache_sector_at (block_sector_t sector_idx, bool is_metadata);
 struct cache_sector* pick_and_evict (void);
+<<<<<<< HEAD
 void write_to_disk (struct cache_sector *sect, bool wait);
 void read_from_disk (block_sector_t sector_idx, struct cache_sector *sector, 
                      bool is_metadata);
@@ -91,6 +117,12 @@ async_flush (void *aux UNUSED)
         }
     }
 }
+=======
+void write_to_disk (struct cache_sector *sect);
+void read_from_disk (block_sector_t sector_idx, struct cache_sector *sector, 
+                     bool is_metadata);
+static void read_ahead ();
+>>>>>>> 1e8d401 (Rename all instances of block to sector cause cache is divided into sectors not blocks)
 
 /* This function finds the next eligible cache sector to evict and returns it,
  * claiming it's lock first
@@ -143,7 +175,11 @@ pick_and_evict ()
  * NOTE: the caller of this function must hold the lock to SECT 
  */
 void
+<<<<<<< HEAD
 write_to_disk (struct cache_sector *sect, bool wait)
+=======
+write_to_disk (struct cache_sector *sect)
+>>>>>>> 1e8d401 (Rename all instances of block to sector cause cache is divided into sectors not blocks)
 {
   /* Writing a sector to disk is a critical section, no other thread should 
    * access this sector while it is being written to disk. */
@@ -173,7 +209,12 @@ write_to_disk (struct cache_sector *sect, bool wait)
       sect->state = og_state;
       cond_broadcast (&sect->being_written, &sect->lock);
     }
+<<<<<<< HEAD
   else if (wait)
+=======
+  else if (sect->state == CACHE_BEING_WRITTEN ||
+      sect->state == CACHE_PENDING_WRITE)
+>>>>>>> 1e8d401 (Rename all instances of block to sector cause cache is divided into sectors not blocks)
     {
       /*If this cache sector is already being written to disk, it's not our problem,
        * wait til it's finished then return */
@@ -222,7 +263,11 @@ struct cache_sector*
 cache_sector_at (block_sector_t sector_idx,  bool is_metadata)
 {
   struct cache_sector *sect = pick_and_evict();
+<<<<<<< HEAD
   write_to_disk (sect, true);
+=======
+  write_to_disk (sect);
+>>>>>>> 1e8d401 (Rename all instances of block to sector cause cache is divided into sectors not blocks)
 
   // read from disk
   read_from_disk (sector_idx, sect, is_metadata);
@@ -290,6 +335,7 @@ get_sector (block_sector_t sector_idx, bool is_metadata)
   return sect;
 }
 
+<<<<<<< HEAD
 /* This function adds sector_idx to the list of sectors to be read in
  * the background. */
 static void
@@ -309,6 +355,8 @@ read_ahead (block_sector_t sector_idx)
 
 }
 
+=======
+>>>>>>> 1e8d401 (Rename all instances of block to sector cause cache is divided into sectors not blocks)
 /* Performs IO of SIZE bytes between cache sector for dist sector at SECTOR_IDX 
  * and buffer BUFFER. caches the disk sector if it is not already cached 
  * returns the number of bytes it successfully IOs */
@@ -339,6 +387,7 @@ cache_io_at (block_sector_t sector_idx, void *buffer,
   return;
 }
 
+<<<<<<< HEAD
 /* This function solely serves to ensure backward compatibility with existing code*/
 void
 cache_io_at_ (block_sector_t sector_idx, void *buffer, bool is_metadata,
@@ -348,6 +397,8 @@ cache_io_at_ (block_sector_t sector_idx, void *buffer, bool is_metadata,
   cache_io_at (sector_idx, buffer, is_metadata, offset, size, is_write);
   read_ahead (sector_next);
 }
+=======
+>>>>>>> 1e8d401 (Rename all instances of block to sector cause cache is divided into sectors not blocks)
 /* Writes all dirty cache sectors to disk */
 void
 cache_write_all (void)
