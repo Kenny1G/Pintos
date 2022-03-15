@@ -74,7 +74,7 @@ bool
 filesys_mkdir (const char *path) 
 {
   struct dir *parent_dir = NULL, *dir = NULL;
-  struct inode *inode = NULL, *lookup_dummy;
+  struct inode *inode = NULL;
   const char *dir_name;
   block_sector_t inode_sector = 0;
 

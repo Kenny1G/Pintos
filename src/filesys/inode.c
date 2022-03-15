@@ -259,7 +259,14 @@ inode_close (struct inode *inode)
   lock_acquire (&inode->lock);
   last_instance = --inode->open_cnt == 0;
   if (last_instance)
-    list_remove (&inode->elem);
+    {
+      list_remove (&inode->elem);
+      if (inode->removed)
+        {
+          free_map_release (inode->sector, 1);
+          inode_clear (inode);
+        }
+    }
   lock_release (&inode->lock);
   lock_release (&open_inodes_lock);
 
