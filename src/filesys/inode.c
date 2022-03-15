@@ -392,11 +392,12 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   lock_acquire (&inode->lock);
   /* Only update the size if it increases. Another process could have
      increased the size further already so don't overwrite it. */
-  if (expanded_length > inode->data.length)
-    inode->data.length = expanded_length;
+  struct inode_disk *disk_inode = &inode->data;
+  if (expanded_length > disk_inode->length)
+    disk_inode->length = expanded_length;
   lock_release (&inode->lock);
   /* Flush the changes to cache. */
-  cache_io_at (inode->sector, &inode->data, true, 0, BLOCK_SECTOR_SIZE, true);
+  cache_io_at (inode->sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
   return bytes_written;
 }
 
