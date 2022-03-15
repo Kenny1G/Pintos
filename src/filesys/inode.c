@@ -245,6 +245,67 @@ inode_dir_lock (struct inode *inode)
   return &inode->dir_lock;
 }
 
+/* Marks free all sectors related to this inode. */
+static bool
+inode_clear (struct inode* inode)
+{
+  struct inode_disk *disk_inode = get_data_at (inode->sector);
+  if (inode->length < 0) return false;
+
+  int num_sectors_left = bytes_to_sectors (inode->length);
+
+  // Clear direct blocks
+  int num_direct = (num_sectors_left < INODE_NUM_DIRECT) ?
+                    num_sectors_left : INODE_NUM_DIRECT;
+  for (int i = 0; i < num_direct; ++i)
+    {
+      free_map_release (disk_inode->block_idxs[i], 1);
+    }
+  num_sectors_left -= num_direct;
+
+  // Free indirect blocks
+  int num_indirect = (num_sectors_left <  INODE_NUM_IN_IND_BLOCK) ?
+    num_sectors_left : INODE_NUM_IN_IND_BLOCK;
+  if (num_indirect > 0)
+  {
+    inode_clear_helper (disk_inode->block_idxs[INODE_IND_IDX], num_indirect, 1);
+    num_sectors_left -= num_indirect;
+  }
+
+  // Free doubly indirect blocks
+  off_t oRet = INODE_NUM_IN_IND_BLOCK * INODE_NUM_IN_IND_BLOCK;
+  num_indirect = (num_sectors_left <  oRet) ?  num_sectors_left : oRet;
+  if (num_indirect > 0)
+    {
+      inode_clear_helper (disk_inode->block_idxs[INODE_DUB_IND_IDX], num_indirect, 1);
+      num_sectors_left -= num_indirect;
+    }
+
+  ASSERT (num_sectors_left == 0);
+  free (disk_inode);
+  return true;
+}
+
+static void
+inode_clear_helper (block_sector_t idx, off_t num_sectors, int level)
+{
+  if (level != 0) 
+    {
+      struct inode_indirect_sector indirect_block; 
+      cache_io_at (idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
+
+      off_t base = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
+      off_t n = DIV_ROUND_UP (num_sectors, base);
+      for (off_t i = 0; i < n; ++i) 
+        {
+          off_t num_in_level = num_sectors < base? num_sectors : base;
+          inode_clear_helper (indirect_block.block_idxs[i], num_in_level, level - 1);
+          num_sectors -= num_in_level;
+        }
+    }
+  free_map_release (idx, 1);
+}
+
 /* Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. */
@@ -517,7 +578,8 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
  *
  * NOTE: user is responsible for freeing the returned bufer after using it.
  */
-static struct inode_disk *get_data_at (block_sector_t sector_idx)
+static struct inode_disk *
+get_data_at (block_sector_t sector_idx)
 {
   struct inode_disk *ret_disk_inode = calloc (1, sizeof (struct inode_disk)); 
   cache_io_at (sector_idx, ret_disk_inode, true, 0, BLOCK_SECTOR_SIZE, false);
@@ -611,65 +673,3 @@ inode_expand_helper (block_sector_t *idx, off_t num_sectors_left, int level)
   cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, true);
   return true;
 }
-
-/* Marks free all sectors related to this inode. */
-static bool
-inode_clear (struct inode* inode)
-{
-  struct inode_disk *disk_inode = get_data_at (inode->sector);
-  if (inode->length < 0) return false;
-
-  int num_sectors_left = bytes_to_sectors (inode->length);
-
-  // Clear direct blocks
-  int num_direct = (num_sectors_left < INODE_NUM_DIRECT) ?
-                    num_sectors_left : INODE_NUM_DIRECT;
-  for (int i = 0; i < num_direct; ++i)
-    {
-      free_map_release (disk_inode->block_idxs[i], 1);
-    }
-  num_sectors_left -= num_direct;
-
-  // Free indirect blocks
-  int num_indirect = (num_sectors_left <  INODE_NUM_IN_IND_BLOCK) ?
-    num_sectors_left : INODE_NUM_IN_IND_BLOCK;
-  if (num_indirect > 0)
-  {
-    inode_clear_helper (disk_inode->block_idxs[INODE_IND_IDX], num_indirect, 1);
-    num_sectors_left -= num_indirect;
-  }
-
-  // Free doubly indirect blocks
-  off_t oRet = INODE_NUM_IN_IND_BLOCK * INODE_NUM_IN_IND_BLOCK;
-  num_indirect = (num_sectors_left <  oRet) ?  num_sectors_left : oRet;
-  if (num_indirect > 0)
-    {
-      inode_clear_helper (disk_inode->block_idxs[INODE_DUB_IND_IDX], num_indirect, 1);
-      num_sectors_left -= num_indirect;
-    }
-
-  ASSERT (num_sectors_left == 0);
-  free (disk_inode);
-  return true;
-}
-
-static void
-inode_clear_helper (block_sector_t idx, off_t num_sectors, int level)
-{
-  if (level != 0) 
-    {
-      struct inode_indirect_sector indirect_block; 
-      cache_io_at (idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
-
-      off_t base = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
-      off_t n = DIV_ROUND_UP (num_sectors, base);
-      for (off_t i = 0; i < n; ++i) 
-        {
-          off_t num_in_level = num_sectors < base? num_sectors : base;
-          inode_clear_helper (indirect_block.block_idxs[i], num_in_level, level - 1);
-          num_sectors -= num_in_level;
-        }
-    }
-  free_map_release (idx, 1);
-}
-
