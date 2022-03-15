@@ -40,7 +40,7 @@ struct inode_indirect_sector
 
 static block_sector_t get_index (const struct inode *inode,
                                  off_t abs_idx);
-static bool inode_expand (struct inode* inode, off_t new_size);
+static bool inode_expand (struct inode_disk* disk_inode, off_t new_size);
 static bool inode_clear (struct inode* inode);
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -106,7 +106,6 @@ inode_init (void)
 bool
 inode_create (block_sector_t sector, off_t length, bool isdir)
 {
-  struct inode *tmp_inode = NULL;
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -116,11 +115,9 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
      one sector in size, and you should fix that. */
   ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
-  tmp_inode = calloc (1, sizeof *tmp_inode);
-  disk_inode = &tmp_inode->data;
-  if (tmp_inode != NULL)
+  disk_inode = calloc (1, sizeof(struct inode_disk));
+  if (disk_inode != NULL)
     {
-      lock_init (&tmp_inode->lock);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->is_dir = isdir;
@@ -128,7 +125,7 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
               INODE_NUM_DIRECT * sizeof(block_sector_t));
       disk_inode->indirect_block = INODE_INVALID_SECTOR;
       disk_inode->dubindirect_block = INODE_INVALID_SECTOR;
-      if (!inode_expand (tmp_inode, length))
+      if (!inode_expand (disk_inode, length))
         success = false;
       else
         {
@@ -136,7 +133,7 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
           success = true; 
         } 
     }
-  free (tmp_inode);
+  free (disk_inode);
   return success;
 }
 
@@ -355,7 +352,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   expanded_length = inode_length (inode);
   if ((byte_to_sector (inode, offset + size - 1, expanded_length) 
        == INODE_INVALID_SECTOR)
-      && !inode_expand (inode, offset + size))
+      //TODO(kenny): move data out of inode struct
+      && !inode_expand (&inode->data, offset + size))
     return 0;  /* Failed to expand the inode. */
   else if (offset + size > expanded_length)
     expanded_length = offset + size;  /* Use the new size while writing. */
@@ -482,8 +480,7 @@ get_index (const struct inode *inode, off_t abs_idx)
 }
 
 static bool
-inode_expand_helper (struct inode *inode, block_sector_t *idx, 
-                     size_t num_sectors_left, int level)
+inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
 {
   if (level == 0) {
     if (*idx == 0)
@@ -513,7 +510,7 @@ inode_expand_helper (struct inode *inode, block_sector_t *idx,
 
   for (i = 0; i < l; ++ i) {
     size_t subsize = (num_sectors_left <  unit) ? num_sectors_left : unit;
-    bool bRet = inode_expand_helper (inode, &indirect_block.data[i], 
+    bool bRet = inode_expand_helper (&indirect_block.data[i], 
                                      subsize, level - 1);
     if (!bRet) return false;
     num_sectors_left -= subsize;
@@ -527,9 +524,8 @@ inode_expand_helper (struct inode *inode, block_sector_t *idx,
 /* Expand inode so it has enough sectors to hold a file of size NEW_SIZE.
    Returns true on success and false on error. */
 static bool
-inode_expand (struct inode *inode, off_t new_size)
+inode_expand (struct inode_disk *disk_inode, off_t new_size)
 {
-  struct inode_disk* disk_inode = &inode->data;
   if (new_size < 0) return false;
 
   int num_sectors_left = bytes_to_sectors (new_size);
@@ -555,7 +551,7 @@ inode_expand (struct inode *inode, off_t new_size)
   // Fill in indirect blocks
   int num_indirect = (num_sectors_left <  INODE_NUM_IN_IND_BLOCK) ?
     num_sectors_left : INODE_NUM_IN_IND_BLOCK;
-  bool bRet = inode_expand_helper (inode, &disk_inode->indirect_block,
+  bool bRet = inode_expand_helper (&disk_inode->indirect_block,
                                    num_indirect, 1);
   if (!bRet) return false;
   num_sectors_left -= num_indirect;
@@ -564,7 +560,7 @@ inode_expand (struct inode *inode, off_t new_size)
   // Fill in doubly indirect blocks
   off_t oRet = INODE_NUM_IN_IND_BLOCK * INODE_NUM_IN_IND_BLOCK;
   num_indirect = (num_sectors_left <  oRet) ?  num_sectors_left : oRet;
-  bRet = inode_expand_helper (inode, &disk_inode->dubindirect_block, 
+  bRet = inode_expand_helper (&disk_inode->dubindirect_block, 
                               num_indirect, 2);
   if (!bRet) return false;
   num_sectors_left -= num_indirect;
