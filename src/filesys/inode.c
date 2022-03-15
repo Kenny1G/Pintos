@@ -67,7 +67,6 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
   };
 
 /* Returns the block device sector that contains byte offset POS
@@ -186,17 +185,18 @@ inode_open (block_sector_t sector)
   lock_release (&inode->lock);
   lock_release (&open_inodes_lock);
 
-  //TODO(kenny): don't load the data from disk
-  /* Lazily load the inode data from disk. */
+  /* Lazily load needed inode data from disk. */
   lock_acquire (&inode->lock);
-  cache_io_at (inode->sector, &inode->data, true, 0, sizeof(struct inode_disk),
+  struct inode_disk *disk_inode = get_data_at (inode->sector);
+  cache_io_at (inode->sector, disk_inode, true, 0, sizeof(struct inode_disk),
                false);
-  inode->is_dir = inode->data.is_dir;
-  inode->length = inode->data.length;
+  inode->is_dir = disk_inode->is_dir;
+  inode->length = disk_inode->length;
   /* Broadcast the fact that the inode has been fully loaded. */
   inode->data_loaded = true;
   cond_broadcast (&inode->data_loaded_cond, &inode->lock);
   lock_release (&inode->lock);
+  free (disk_inode);
   return inode;
 }
 
