@@ -38,7 +38,7 @@ struct inode_indirect_sector
   block_sector_t data[INODE_NUM_IN_IND_BLOCK];
 };
 
-static block_sector_t get_index (const struct inode_disk *disk_inode,
+static block_sector_t get_index (const struct inode *inode,
                                  off_t abs_idx);
 static bool inode_expand (struct inode* inode, off_t new_size);
 static bool inode_clear (struct inode* inode);
@@ -79,7 +79,7 @@ byte_to_sector (const struct inode *inode, off_t pos, off_t length)
   if (pos >= 0 && pos < length)
     {
       off_t abs_idx =  pos / BLOCK_SECTOR_SIZE;
-      return get_index (&inode->data, abs_idx);
+      return get_index (inode, abs_idx);
     }
   else
     return INODE_INVALID_SECTOR;
@@ -438,10 +438,11 @@ inode_length (struct inode *inode)
 }
 
 static block_sector_t
-get_index (const struct inode_disk *disk_inode, off_t abs_idx)
+get_index (const struct inode *inode, off_t abs_idx)
 {
   struct inode_indirect_sector *sect;
   block_sector_t idx = INODE_INVALID_SECTOR;
+  const struct inode_disk* disk_inode = &inode->data;
 
   if (abs_idx < INODE_NUM_DIRECT)
     {
