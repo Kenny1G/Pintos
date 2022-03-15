@@ -21,6 +21,13 @@
 
 static char ZEROARRAY[BLOCK_SECTOR_SIZE];
 
+/* List of open inodes, so that opening a single inode twice
+   returns the same `struct inode'. */
+static struct lock open_inodes_lock;
+static struct list open_inodes;
+
+/* On-disk inode for indirect sector
+ * Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_indirect_sector
   {
     block_sector_t block_idxs[INODE_NUM_IN_IND_BLOCK];
@@ -36,11 +43,12 @@ struct inode_disk
     unsigned magic;                     /* Magic number. */
   };
 
-static block_sector_t get_index (const struct inode_disk *disk_inode,
-                                 off_t abs_idx);
-static struct inode_disk *get_data_at (block_sector_t sector_idx);
-static bool inode_expand (struct inode_disk* disk_inode, off_t new_size);
-static bool inode_clear (struct inode* inode);
+static block_sector_t get_index (const struct inode_disk*, off_t);
+static struct inode_disk *get_data_at (block_sector_t);
+static bool inode_expand (struct inode_disk*, off_t);
+static bool inode_expand_helper (block_sector_t*, off_t, int);
+static bool inode_clear (struct inode*);
+static void inode_clear_helper (block_sector_t, off_t, int);
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -85,11 +93,6 @@ byte_to_sector (const struct inode_disk *disk_inode, off_t pos, off_t length)
   else
     return INODE_INVALID_SECTOR;
 }
-
-/* List of open inodes, so that opening a single inode twice
-   returns the same `struct inode'. */
-static struct lock open_inodes_lock;
-static struct list open_inodes;
 
 /* Initializes the inode module. */
 void
@@ -521,47 +524,6 @@ static struct inode_disk *get_data_at (block_sector_t sector_idx)
   return ret_disk_inode;
 }
 
-static bool
-inode_expand_helper (block_sector_t *idx, off_t num_sectors_left, int level)
-{
-  if (level == 0) {
-    if (*idx == 0)
-      {
-        if (!free_map_allocate (1, idx)) 
-          {
-            return false;
-          }
-        cache_io_at (*idx, ZEROARRAY, false, 0, BLOCK_SECTOR_SIZE, true);
-      }
-    return true;
-  }
-
-  struct inode_indirect_sector indirect_block;
-  if(*idx == INODE_INVALID_SECTOR || *idx == 0) 
-  {
-    if (!free_map_allocate (1, idx)) 
-      {
-        return false;
-      }
-    cache_io_at (*idx, ZEROARRAY, true, 0, BLOCK_SECTOR_SIZE, true);
-  } 
-  cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
-
-  off_t base = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
-  off_t n = DIV_ROUND_UP (num_sectors_left, base);
-  for (off_t i = 0; i < n; ++i) 
-    {
-      off_t num_in_level = (num_sectors_left <  base) ? num_sectors_left : base;
-      bool bRet = inode_expand_helper (&indirect_block.block_idxs[i], 
-                                       num_in_level, level - 1);
-      if (!bRet) return false;
-      num_sectors_left -= num_in_level;
-    }
-
-  cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, true);
-  return true;
-}
-
 /* Expand inode so it has enough sectors to hold a file of size NEW_SIZE.
    Returns true on success and false on error. */
 static bool
@@ -609,24 +571,45 @@ inode_expand (struct inode_disk *disk_inode, off_t new_size)
   return false;
 }
 
-static void
-inode_clear_helper (block_sector_t idx, off_t num_sectors, int level)
+static bool
+inode_expand_helper (block_sector_t *idx, off_t num_sectors_left, int level)
 {
-  if (level != 0) 
-    {
-      struct inode_indirect_sector indirect_block; 
-      cache_io_at (idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
+  if (level == 0) {
+    if (*idx == 0)
+      {
+        if (!free_map_allocate (1, idx)) 
+          {
+            return false;
+          }
+        cache_io_at (*idx, ZEROARRAY, false, 0, BLOCK_SECTOR_SIZE, true);
+      }
+    return true;
+  }
 
-      off_t base = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
-      off_t n = DIV_ROUND_UP (num_sectors, base);
-      for (off_t i = 0; i < n; ++i) 
-        {
-          off_t num_in_level = num_sectors < base? num_sectors : base;
-          inode_clear_helper (indirect_block.block_idxs[i], num_in_level, level - 1);
-          num_sectors -= num_in_level;
-        }
+  struct inode_indirect_sector indirect_block;
+  if(*idx == INODE_INVALID_SECTOR || *idx == 0) 
+  {
+    if (!free_map_allocate (1, idx)) 
+      {
+        return false;
+      }
+    cache_io_at (*idx, ZEROARRAY, true, 0, BLOCK_SECTOR_SIZE, true);
+  } 
+  cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
+
+  off_t base = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
+  off_t n = DIV_ROUND_UP (num_sectors_left, base);
+  for (off_t i = 0; i < n; ++i) 
+    {
+      off_t num_in_level = (num_sectors_left <  base) ? num_sectors_left : base;
+      bool bRet = inode_expand_helper (&indirect_block.block_idxs[i], 
+                                       num_in_level, level - 1);
+      if (!bRet) return false;
+      num_sectors_left -= num_in_level;
     }
-  free_map_release (idx, 1);
+
+  cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, true);
+  return true;
 }
 
 /* Marks free all sectors related to this inode. */
@@ -669,3 +652,24 @@ inode_clear (struct inode* inode)
   free (disk_inode);
   return true;
 }
+
+static void
+inode_clear_helper (block_sector_t idx, off_t num_sectors, int level)
+{
+  if (level != 0) 
+    {
+      struct inode_indirect_sector indirect_block; 
+      cache_io_at (idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
+
+      off_t base = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
+      off_t n = DIV_ROUND_UP (num_sectors, base);
+      for (off_t i = 0; i < n; ++i) 
+        {
+          off_t num_in_level = num_sectors < base? num_sectors : base;
+          inode_clear_helper (indirect_block.block_idxs[i], num_in_level, level - 1);
+          num_sectors -= num_in_level;
+        }
+    }
+  free_map_release (idx, 1);
+}
+
