@@ -474,8 +474,11 @@ static bool
 inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
 {
   if (level == 0) {
-    if (!free_map_allocate (1, idx)) return false;
-    cache_io_at (*idx, ZEROARRAY, false, 0, BLOCK_SECTOR_SIZE, true);
+    if (*idx == 0)
+      {
+        if (!free_map_allocate (1, idx)) return false;
+        cache_io_at (*idx, ZEROARRAY, false, 0, BLOCK_SECTOR_SIZE, true);
+      }
     return true;
   }
 
