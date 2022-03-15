@@ -107,34 +107,34 @@ inode_init (void)
 bool
 inode_create (block_sector_t sector, off_t length, bool isdir)
 {
-  struct inode_disk *disk_inode = NULL;
+  struct inode_disk *t_disk_inode = NULL;
   bool success = false;
 
   ASSERT (length >= 0);
 
   /* If this assertion fails, the inode structure is not exactly
      one sector in size, and you should fix that. */
-  ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
+  ASSERT (sizeof *t_disk_inode == BLOCK_SECTOR_SIZE);
 
-  disk_inode = calloc (1, sizeof(struct inode_disk));
-  if (disk_inode != NULL)
+  t_disk_inode = calloc (1, sizeof(struct inode_disk));
+  if (t_disk_inode != NULL)
     {
-      disk_inode->length = length;
-      disk_inode->magic = INODE_MAGIC;
-      disk_inode->is_dir = isdir;
-      memset (&disk_inode->direct_blocks, INODE_INVALID_SECTOR,
+      t_disk_inode->length = length;
+      t_disk_inode->magic = INODE_MAGIC;
+      t_disk_inode->is_dir = isdir;
+      memset (&t_disk_inode->direct_blocks, INODE_INVALID_SECTOR,
               INODE_NUM_DIRECT * sizeof(block_sector_t));
-      disk_inode->indirect_block = INODE_INVALID_SECTOR;
-      disk_inode->dubindirect_block = INODE_INVALID_SECTOR;
-      if (!inode_expand (disk_inode, length))
+      t_disk_inode->indirect_block = INODE_INVALID_SECTOR;
+      t_disk_inode->dubindirect_block = INODE_INVALID_SECTOR;
+      if (!inode_expand (t_disk_inode, length))
         success = false;
       else
         {
-          cache_io_at (sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
+          cache_io_at (sector, t_disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
           success = true; 
         } 
     }
-  free (disk_inode);
+  free (t_disk_inode);
   return success;
 }
 
