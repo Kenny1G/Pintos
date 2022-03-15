@@ -427,7 +427,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     {
       inode->length = length_after_write;
       disk_inode->length = length_after_write;
-      l_disk_inode->length = length_after_write; //TODO remove
+      //l_disk_inode->length = length_after_write; //TODO remove
       lock_release (&inode->eof_lock);
       /* Flush the changes to cache. */
       cache_io_at (inode->sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
