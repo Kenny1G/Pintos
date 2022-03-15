@@ -61,6 +61,7 @@ struct inode
     struct list_elem elem;              /* Element in inode list. */
     block_sector_t sector;              /* Sector number of disk location. */
     bool is_dir;                        /* Whether this inode is dir or not*/
+    off_t length;                       /* File size in bytes. */
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
@@ -187,8 +188,9 @@ inode_open (block_sector_t sector)
   lock_acquire (&inode->lock);
   cache_io_at (inode->sector, &inode->data, true, 0, sizeof(struct inode_disk),
                false);
-  /* Broadcast the fact that the inode has been fully loaded. */
   inode->is_dir = inode->data.is_dir;
+  inode->length = inode->data.length;
+  /* Broadcast the fact that the inode has been fully loaded. */
   inode->data_loaded = true;
   cond_broadcast (&inode->data_loaded_cond, &inode->lock);
   lock_release (&inode->lock);
@@ -393,9 +395,13 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   lock_acquire (&inode->lock);
   /* Only update the size if it increases. Another process could have
      increased the size further already so don't overwrite it. */
+  //TODO(kenny): move data out of inode struct
   struct inode_disk *disk_inode = &inode->data;
-  if (expanded_length > disk_inode->length)
-    disk_inode->length = expanded_length;
+  if (expanded_length > inode->length)
+    {
+      inode->length = expanded_length;
+      disk_inode->length = expanded_length;
+    }
   lock_release (&inode->lock);
   /* Flush the changes to cache. */
   cache_io_at (inode->sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
@@ -433,7 +439,7 @@ inode_length (struct inode *inode)
 {
   off_t length;
   lock_acquire (&inode->lock);
-  length = inode->data.length;
+  length = inode->length;
   lock_release (&inode->lock);
   return length;
 }
@@ -600,9 +606,9 @@ static bool
 inode_clear (struct inode* inode)
 {
   struct inode_disk *disk_inode = &inode->data;
-  if (disk_inode->length < 0) return false;
+  if (inode->length < 0) return false;
 
-  int num_sectors_left = bytes_to_sectors (disk_inode->length);
+  int num_sectors_left = bytes_to_sectors (inode->length);
 
   // Clear direct blocks
   int num_direct = (num_sectors_left < INODE_NUM_DIRECT) ?
