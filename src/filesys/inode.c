@@ -437,7 +437,7 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
     {
         idx = disk_inode->direct_blocks[abs_idx];
     }
-  else if (abs_idx < (2 * INODE_NUM_IN_IND_BLOCK))
+  else if (abs_idx < (INODE_NUM_DIRECT + INODE_NUM_IN_IND_BLOCK))
     {
       sect = calloc (1, sizeof (struct inode_indirect_sector));
       if (sect != NULL)
@@ -448,10 +448,10 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
           free (sect);
         }
     }
-  else if (abs_idx < (2 * INODE_NUM_IN_IND_BLOCK) + 
+  else if (abs_idx < (INODE_NUM_DIRECT + INODE_NUM_IN_IND_BLOCK) + 
       INODE_NUM_IN_IND_BLOCK * INODE_NUM_IN_IND_BLOCK)
     {
-      off_t start = abs_idx - (2 * INODE_NUM_IN_IND_BLOCK);
+      off_t start = abs_idx - (INODE_NUM_DIRECT + INODE_NUM_IN_IND_BLOCK);
       off_t outer_idx = start / INODE_NUM_IN_IND_BLOCK;
       off_t inner_idx = start % INODE_NUM_IN_IND_BLOCK;
 
@@ -473,6 +473,8 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
 static bool
 inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
 {
+  static block_sector_t filler[BLOCK_SECTOR_SIZE] = {INODE_INVALID_SECTOR};
+
   if (level == 0) {
     if (*idx == 0)
       {
@@ -483,7 +485,7 @@ inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
   }
 
   struct inode_indirect_sector indirect_block;
-  if(*idx == INODE_INVALID_SECTOR) 
+  if(*idx == INODE_INVALID_SECTOR || *idx == 0) 
   {
     if (!free_map_allocate (1, idx)) return false;
     cache_io_at (*idx, ZEROARRAY, true, 0, BLOCK_SECTOR_SIZE, true);
