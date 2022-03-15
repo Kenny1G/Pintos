@@ -138,7 +138,9 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
               INODE_NUM_DIRECT * sizeof(block_sector_t));
       disk_inode->indirect_block = INODE_INVALID_SECTOR;
       disk_inode->dubindirect_block = INODE_INVALID_SECTOR;
-      if (inode_expand (disk_inode, length))
+      if (!inode_expand (disk_inode, length))
+        success = false;
+      else
         {
           cache_io_at (sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
           success = true; 
@@ -164,8 +166,7 @@ inode_open (block_sector_t sector)
       inode = list_entry (e, struct inode, elem);
       if (inode->sector == sector) 
         {
-          inode_reopen (inode);
-          return inode; 
+          return inode_reopen (inode);
         }
     }
 
@@ -190,8 +191,9 @@ inode_open (block_sector_t sector)
 struct inode *
 inode_reopen (struct inode *inode)
 {
-  if (inode != NULL)
-    inode->open_cnt++;
+  if (inode == NULL || inode->removed)
+    return NULL;
+  inode->open_cnt++;
   return inode;
 }
 
@@ -236,17 +238,11 @@ inode_close (struct inode *inode)
     }
 }
 
+/* Returns true if INODE represents a directory not a file. */
 bool
 inode_isdir (const struct inode *inode)
 { 
   return inode->data.is_dir;
-}
-
-void
-inode_setdir (struct inode *inode)
-{ 
-  inode->data.is_dir = true;
-  cache_io_at (inode->sector, &inode->data, true, 0, BLOCK_SECTOR_SIZE, true);
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
@@ -503,7 +499,8 @@ inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
   cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, true);
 }
 
-/* Expand inode so it has enough sectors to hold a file of size NEW_SIZE. */
+/* Expand inode so it has enough sectors to hold a file of size NEW_SIZE.
+   Returns true on success and false on error. */
 static bool
 inode_expand (struct inode_disk* disk_inode, off_t new_size)
 {

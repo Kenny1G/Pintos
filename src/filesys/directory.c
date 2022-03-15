@@ -85,10 +85,19 @@ dir_open_dirs (const char *filepath)
     }
   if (parent_dir == NULL)
     goto fail;
+  
   /* Keep traversing FILEPATH until there are no more trailing slashes. */
-  while ((next_slash = strchr (filepath, '/'))
-         && *(next_slash + 1) != '\0')
+  while ((next_slash = strchr (filepath, '/')))
     {
+      /* Reject paths with a trailing slash. */
+      if (*(next_slash + 1) == '\0')
+        goto fail;
+      /* Skip consecutive slashes. */
+      if (next_slash == filepath)
+        {
+          filepath++;
+          continue;
+        }
       curr_name_len = next_slash - filepath;
       /* Fail is the current name is larger than supported. */
       if (curr_name_len > NAME_MAX)
