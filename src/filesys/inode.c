@@ -40,6 +40,7 @@ struct inode_indirect_sector
 
 static block_sector_t get_index (const struct inode *inode,
                                  off_t abs_idx);
+static struct inode_disk *get_data_at (block_sector_t sector_idx);
 static bool inode_expand (struct inode_disk* disk_inode, off_t new_size);
 static bool inode_clear (struct inode* inode);
 
@@ -488,6 +489,17 @@ get_index (const struct inode *inode, off_t abs_idx)
   return idx;
 }
 
+/* Reads the sector data for inode from disk and returns it.
+ *
+ * NOTE: user is responsible for freeing the returned bufer after using it.
+ */
+static struct inode_disk *get_data_at (block_sector_t sector_idx)
+{
+  struct inode_disk *ret_disk_inode = calloc (1, sizeof (struct inode_disk)); 
+  cache_io_at (sector_idx, ret_disk_inode, true, 0, BLOCK_SECTOR_SIZE, false);
+  return ret_disk_inode;
+}
+
 static bool
 inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
 {
@@ -605,7 +617,7 @@ inode_clear_helper (block_sector_t idx, size_t num_sectors, int level)
 static bool
 inode_clear (struct inode* inode)
 {
-  struct inode_disk *disk_inode = &inode->data;
+  struct inode_disk *disk_inode = get_data_at (inode->sector);
   if (inode->length < 0) return false;
 
   int num_sectors_left = bytes_to_sectors (inode->length);
@@ -638,5 +650,6 @@ inode_clear (struct inode* inode)
     }
 
   ASSERT (num_sectors_left == 0);
+  free (disk_inode);
   return true;
 }
