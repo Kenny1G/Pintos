@@ -60,6 +60,7 @@ struct inode
     struct lock dir_lock;               /* Lock for directory synch. */
     struct list_elem elem;              /* Element in inode list. */
     block_sector_t sector;              /* Sector number of disk location. */
+    bool is_dir;                        /* Whether this inode is dir or not*/
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
@@ -181,11 +182,13 @@ inode_open (block_sector_t sector)
   lock_release (&inode->lock);
   lock_release (&open_inodes_lock);
 
+  //TODO(kenny): don't load the data from disk
   /* Lazily load the inode data from disk. */
   lock_acquire (&inode->lock);
-  cache_io_at (inode->sector, &inode->data, true, 0, sizeof(inode->data),
+  cache_io_at (inode->sector, &inode->data, true, 0, sizeof(struct inode_disk),
                false);
   /* Broadcast the fact that the inode has been fully loaded. */
+  inode->is_dir = inode->data.is_dir;
   inode->data_loaded = true;
   cond_broadcast (&inode->data_loaded_cond, &inode->lock);
   lock_release (&inode->lock);
@@ -276,7 +279,7 @@ bool
 inode_isdir (const struct inode *inode)
 { 
   /* No need to acquire the lock because this member is read-only on init. */
-  return inode->data.is_dir;
+  return inode->is_dir;
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
