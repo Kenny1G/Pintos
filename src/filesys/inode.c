@@ -23,7 +23,7 @@ static char ZEROARRAY[BLOCK_SECTOR_SIZE];
 
 struct inode_indirect_sector
   {
-    block_sector_t data[INODE_NUM_IN_IND_BLOCK];
+    block_sector_t block_idxs[INODE_NUM_IN_IND_BLOCK];
   };
 
 /* On-disk inode.
@@ -484,7 +484,7 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
         {
           cache_io_at (disk_inode->block_idxs[INODE_IND_IDX], sect, true, 0,
                        BLOCK_SECTOR_SIZE, false);
-          idx = sect->data [abs_idx - INODE_NUM_DIRECT];
+          idx = sect->block_idxs [abs_idx - INODE_NUM_DIRECT];
           free (sect);
         }
     }
@@ -500,9 +500,9 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
         {
           cache_io_at (disk_inode->block_idxs[INODE_DUB_IND_IDX], sect, true, 0,
                        BLOCK_SECTOR_SIZE, false);
-          cache_io_at (sect->data[outer_idx], sect, true, 0, BLOCK_SECTOR_SIZE,
+          cache_io_at (sect->block_idxs[outer_idx], sect, true, 0, BLOCK_SECTOR_SIZE,
                        false);
-          idx = sect->data[inner_idx];
+          idx = sect->block_idxs[inner_idx];
           free (sect);
         }
     }
@@ -552,7 +552,7 @@ inode_expand_helper (block_sector_t *idx, off_t num_sectors_left, int level)
   for (off_t i = 0; i < n; ++i) 
     {
       off_t num_in_level = (num_sectors_left <  base) ? num_sectors_left : base;
-      bool bRet = inode_expand_helper (&indirect_block.data[i], 
+      bool bRet = inode_expand_helper (&indirect_block.block_idxs[i], 
                                        num_in_level, level - 1);
       if (!bRet) return false;
       num_sectors_left -= num_in_level;
@@ -622,7 +622,7 @@ inode_clear_helper (block_sector_t idx, off_t num_sectors, int level)
       for (off_t i = 0; i < n; ++i) 
         {
           off_t num_in_level = num_sectors < base? num_sectors : base;
-          inode_clear_helper (indirect_block.data[i], num_in_level, level - 1);
+          inode_clear_helper (indirect_block.block_idxs[i], num_in_level, level - 1);
           num_sectors -= num_in_level;
         }
     }
