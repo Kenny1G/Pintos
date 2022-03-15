@@ -480,7 +480,8 @@ inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
   }
 
   struct inode_indirect_sector indirect_block;
-  if(*idx == INODE_INVALID_SECTOR) {
+  if(*idx == INODE_INVALID_SECTOR) 
+  {
     if (!free_map_allocate (1, idx)) return false;
     cache_io_at (*idx, ZEROARRAY, true, 0, BLOCK_SECTOR_SIZE, true);
   } 
@@ -491,7 +492,8 @@ inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
 
   for (i = 0; i < l; ++ i) {
     size_t subsize = (num_sectors_left <  unit) ? num_sectors_left : unit;
-    inode_expand_helper (&indirect_block.data[i], subsize, level - 1);
+    bool bRet = inode_expand_helper (&indirect_block.data[i], subsize, level - 1);
+    if (!bRet) return false;
     num_sectors_left -= subsize;
   }
 
