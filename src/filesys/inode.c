@@ -308,7 +308,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   off_t bytes_read = 0;
   off_t inode_len = inode_length (inode);
 
-  struct inode_disk *disk_inode = &inode->data;
+  struct inode_disk *disk_inode = get_data_at (inode->sector);
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
@@ -338,6 +338,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       bytes_read += chunk_size;
     }
 
+  free (disk_inode);
   return bytes_read;
 }
 
@@ -358,8 +359,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
     return 0;
 
-  //TODO(kenny): move data out of inode struct
-  struct inode_disk *disk_inode = &inode->data;
+  struct inode_disk *disk_inode = get_data_at (inode->sector);
   length_after_write = inode_length (inode);
 
   /* Expand if write will go past end of file. */
@@ -379,6 +379,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (!inode_expand (disk_inode, offset + size))
         {
           lock_release (&inode->eof_lock);
+          free (disk_inode);
           return 0;  /* Failed to expand the inode. */
         }
     }
@@ -427,11 +428,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     {
       inode->length = length_after_write;
       disk_inode->length = length_after_write;
-      //l_disk_inode->length = length_after_write; //TODO remove
       lock_release (&inode->eof_lock);
       /* Flush the changes to cache. */
       cache_io_at (inode->sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
     }
+  free (disk_inode);
   return bytes_written;
 }
 
