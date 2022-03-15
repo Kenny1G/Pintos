@@ -15,28 +15,26 @@
 // Number of Blocks
 #define INODE_NUM_BLOCKS 125
 #define INODE_NUM_DIRECT 123
-//todo(kenny) rename to num_sectors in ind block
+#define INODE_IND_IDX INODE_NUM_DIRECT
+#define INODE_DUB_IND_IDX INODE_NUM_BLOCKS - 1
 #define INODE_NUM_IN_IND_BLOCK 128
 
 static char ZEROARRAY[BLOCK_SECTOR_SIZE];
+
+struct inode_indirect_sector
+  {
+    block_sector_t data[INODE_NUM_IN_IND_BLOCK];
+  };
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t direct_blocks [INODE_NUM_DIRECT];
-    block_sector_t indirect_block;
-    block_sector_t dubindirect_block;
-
+    block_sector_t block_idxs [INODE_NUM_BLOCKS];
     bool is_dir;
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
   };
-
-struct inode_indirect_sector
-{
-  block_sector_t data[INODE_NUM_IN_IND_BLOCK];
-};
 
 static block_sector_t get_index (const struct inode_disk *disk_inode,
                                  off_t abs_idx);
@@ -124,10 +122,8 @@ inode_create (block_sector_t sector, off_t length, bool isdir)
       t_disk_inode->length = length;
       t_disk_inode->magic = INODE_MAGIC;
       t_disk_inode->is_dir = isdir;
-      memset (&t_disk_inode->direct_blocks, INODE_INVALID_SECTOR,
-              INODE_NUM_DIRECT * sizeof(block_sector_t));
-      t_disk_inode->indirect_block = INODE_INVALID_SECTOR;
-      t_disk_inode->dubindirect_block = INODE_INVALID_SECTOR;
+      memset (&t_disk_inode->block_idxs, INODE_INVALID_SECTOR,
+              INODE_NUM_BLOCKS * sizeof(block_sector_t));
       if (!inode_expand (t_disk_inode, length))
         success = false;
       else
@@ -479,14 +475,14 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
   block_sector_t idx = INODE_INVALID_SECTOR;
   if (abs_idx < INODE_NUM_DIRECT)
     {
-        idx = disk_inode->direct_blocks[abs_idx];
+        idx = disk_inode->block_idxs[abs_idx];
     }
   else if (abs_idx < (INODE_NUM_DIRECT + INODE_NUM_IN_IND_BLOCK))
     {
       sect = calloc (1, sizeof (struct inode_indirect_sector));
       if (sect != NULL)
         {
-          cache_io_at (disk_inode->indirect_block, sect, true, 0,
+          cache_io_at (disk_inode->block_idxs[INODE_IND_IDX], sect, true, 0,
                        BLOCK_SECTOR_SIZE, false);
           idx = sect->data [abs_idx - INODE_NUM_DIRECT];
           free (sect);
@@ -502,7 +498,7 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
       sect = calloc (1, sizeof (struct inode_indirect_sector));
       if (sect != NULL)
         {
-          cache_io_at (disk_inode->dubindirect_block, sect, true, 0,
+          cache_io_at (disk_inode->block_idxs[INODE_DUB_IND_IDX], sect, true, 0,
                        BLOCK_SECTOR_SIZE, false);
           cache_io_at (sect->data[outer_idx], sect, true, 0, BLOCK_SECTOR_SIZE,
                        false);
@@ -526,7 +522,7 @@ static struct inode_disk *get_data_at (block_sector_t sector_idx)
 }
 
 static bool
-inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
+inode_expand_helper (block_sector_t *idx, off_t num_sectors_left, int level)
 {
   if (level == 0) {
     if (*idx == 0)
@@ -551,18 +547,17 @@ inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
   } 
   cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
 
-  size_t unit = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
-  size_t i, l = DIV_ROUND_UP (num_sectors_left, unit);
+  off_t base = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
+  off_t n = DIV_ROUND_UP (num_sectors_left, base);
+  for (off_t i = 0; i < n; ++i) 
+    {
+      off_t num_in_level = (num_sectors_left <  base) ? num_sectors_left : base;
+      bool bRet = inode_expand_helper (&indirect_block.data[i], 
+                                       num_in_level, level - 1);
+      if (!bRet) return false;
+      num_sectors_left -= num_in_level;
+    }
 
-  for (i = 0; i < l; ++ i) {
-    size_t subsize = (num_sectors_left <  unit) ? num_sectors_left : unit;
-    bool bRet = inode_expand_helper (&indirect_block.data[i], 
-                                     subsize, level - 1);
-    if (!bRet) return false;
-    num_sectors_left -= subsize;
-  }
-
-  ASSERT (num_sectors_left == 0);
   cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, true);
   return true;
 }
@@ -581,7 +576,7 @@ inode_expand (struct inode_disk *disk_inode, off_t new_size)
                     num_sectors_left : INODE_NUM_DIRECT;
   for (int i = 0; i < num_direct; ++i)
     {
-      block_sector_t *cand =  &disk_inode->direct_blocks[i];
+      block_sector_t *cand =  &disk_inode->block_idxs[i];
       if (*cand == INODE_INVALID_SECTOR)
         {
           if (!free_map_allocate (1, cand))
@@ -597,7 +592,7 @@ inode_expand (struct inode_disk *disk_inode, off_t new_size)
   // Fill in indirect blocks
   int num_indirect = (num_sectors_left <  INODE_NUM_IN_IND_BLOCK) ?
     num_sectors_left : INODE_NUM_IN_IND_BLOCK;
-  bool bRet = inode_expand_helper (&disk_inode->indirect_block,
+  bool bRet = inode_expand_helper (&disk_inode->block_idxs[INODE_IND_IDX],
                                    num_indirect, 1);
   if (!bRet) return false;
   num_sectors_left -= num_indirect;
@@ -606,7 +601,7 @@ inode_expand (struct inode_disk *disk_inode, off_t new_size)
   // Fill in doubly indirect blocks
   off_t oRet = INODE_NUM_IN_IND_BLOCK * INODE_NUM_IN_IND_BLOCK;
   num_indirect = (num_sectors_left <  oRet) ?  num_sectors_left : oRet;
-  bRet = inode_expand_helper (&disk_inode->dubindirect_block, 
+  bRet = inode_expand_helper (&disk_inode->block_idxs[INODE_DUB_IND_IDX], 
                               num_indirect, 2);
   if (!bRet) return false;
   num_sectors_left -= num_indirect;
@@ -615,26 +610,22 @@ inode_expand (struct inode_disk *disk_inode, off_t new_size)
 }
 
 static void
-inode_clear_helper (block_sector_t idx, size_t num_sectors, int level)
+inode_clear_helper (block_sector_t idx, off_t num_sectors, int level)
 {
-  if (level == 0) {
-    free_map_release (idx, 1);
-    return;
-  }
+  if (level != 0) 
+    {
+      struct inode_indirect_sector indirect_block; 
+      cache_io_at (idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
 
-  struct inode_indirect_sector indirect_block; 
-  cache_io_at (idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
-
-  size_t unit = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
-  size_t i, l = DIV_ROUND_UP (num_sectors, unit);
-
-  for (i = 0; i < l; ++ i) {
-    size_t subsize = num_sectors < unit? num_sectors : unit;
-    inode_clear_helper (indirect_block.data[i], subsize, level - 1);
-    num_sectors -= subsize;
-  }
-
-  ASSERT (num_sectors == 0);
+      off_t base = (level == 1 ? 1 : INODE_NUM_IN_IND_BLOCK);
+      off_t n = DIV_ROUND_UP (num_sectors, base);
+      for (off_t i = 0; i < n; ++i) 
+        {
+          off_t num_in_level = num_sectors < base? num_sectors : base;
+          inode_clear_helper (indirect_block.data[i], num_in_level, level - 1);
+          num_sectors -= num_in_level;
+        }
+    }
   free_map_release (idx, 1);
 }
 
@@ -652,7 +643,7 @@ inode_clear (struct inode* inode)
                     num_sectors_left : INODE_NUM_DIRECT;
   for (int i = 0; i < num_direct; ++i)
     {
-      free_map_release (disk_inode->direct_blocks[i], 1);
+      free_map_release (disk_inode->block_idxs[i], 1);
     }
   num_sectors_left -= num_direct;
 
@@ -661,7 +652,7 @@ inode_clear (struct inode* inode)
     num_sectors_left : INODE_NUM_IN_IND_BLOCK;
   if (num_indirect > 0)
   {
-    inode_clear_helper (disk_inode->indirect_block, num_indirect, 1);
+    inode_clear_helper (disk_inode->block_idxs[INODE_IND_IDX], num_indirect, 1);
     num_sectors_left -= num_indirect;
   }
 
@@ -670,7 +661,7 @@ inode_clear (struct inode* inode)
   num_indirect = (num_sectors_left <  oRet) ?  num_sectors_left : oRet;
   if (num_indirect > 0)
     {
-      inode_clear_helper (disk_inode->dubindirect_block, num_indirect, 1);
+      inode_clear_helper (disk_inode->block_idxs[INODE_DUB_IND_IDX], num_indirect, 1);
       num_sectors_left -= num_indirect;
     }
 
