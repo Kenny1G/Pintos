@@ -355,11 +355,12 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     return 0;
 
   /* Expand if write will go past end of file. */
+  struct inode_disk *disk_inode = &inode->data;
   expanded_length = inode_length (inode);
   if ((byte_to_sector (inode, offset + size - 1, expanded_length) 
        == INODE_INVALID_SECTOR)
       //TODO(kenny): move data out of inode struct
-      && !inode_expand (&inode->data, offset + size))
+      && !inode_expand (disk_inode, offset + size))
     return 0;  /* Failed to expand the inode. */
   else if (offset + size > expanded_length)
     expanded_length = offset + size;  /* Use the new size while writing. */
@@ -397,7 +398,6 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   /* Only update the size if it increases. Another process could have
      increased the size further already so don't overwrite it. */
   //TODO(kenny): move data out of inode struct
-  struct inode_disk *disk_inode = &inode->data;
   if (expanded_length > inode->length)
     {
       inode->length = expanded_length;
