@@ -354,8 +354,6 @@ void
 cache_io_at (block_sector_t sector_idx, void *buffer, 
     bool is_metadata, off_t offset, off_t size, bool is_write)
 {
-  cache_direct_io_at (sector_idx, buffer, offset, size, is_write);
-  return;
   struct cache_sector *sect = get_sector (sector_idx, is_metadata);
 
   ASSERT (offset + size <= BLOCK_SECTOR_SIZE);
@@ -392,7 +390,6 @@ cache_io_at_ (block_sector_t sector_idx, void *buffer, bool is_metadata,
 void
 cache_write_all (void)
 {
-  return;
   for (int i = 0; i < CACHE_NUM_SECTORS; ++i)
     {
       lock_acquire (&cache[i].lock);
@@ -404,7 +401,6 @@ cache_write_all (void)
 bool
 cache_init (void)
 {
-  return true;
   clock_hand = CACHE_NUM_SECTORS - 1;
   lock_init (&clock_lock);
   lock_init (&async_read_lock);
