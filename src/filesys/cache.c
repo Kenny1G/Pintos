@@ -110,7 +110,7 @@ pick_and_evict ()
     {
       clock_start = (++clock_hand) % CACHE_NUM_SECTORS;
       if (clock_hand == clock_start)
-        PANIC("No READY cache sector found to evict"); //TODO(kenny): reevaluate
+        PANIC("No READY cache sector found to evict");
       cand = &cache[clock_start];
     }
 
@@ -148,8 +148,7 @@ write_to_disk (struct cache_sector *sect, bool wait)
   /* Writing a sector to disk is a critical section, no other thread should 
    * access this sector while it is being written to disk. */
   ASSERT (lock_held_by_current_thread(&sect->lock));
-  // TODO(kenny): unsure of this for now, is it possible for write_to_disk
-  // to be called on a disk that's being read from disk.
+  // TODO(kenny): Remove me before submitting
   ASSERT (sect->state != CACHE_BEING_READ);
   if (!(sect->dirty_bit & DIRTY))
     return;
@@ -158,17 +157,14 @@ write_to_disk (struct cache_sector *sect, bool wait)
       enum cache_state og_state = sect->state;
       /* We don't want to write to disk until accessors have finished making
        * their changes. */
-      // TODO(kenny) : still unsure if we need pending write
       sect->state = CACHE_PENDING_WRITE;
       while (sect->num_accessors > 0)
         cond_wait(&sect->being_accessed, &sect->lock);
 
       sect->state = CACHE_BEING_WRITTEN;
-      // TODO(kenny) maybe release lock here 
       ASSERT (sect->sector_idx != INODE_INVALID_SECTOR);
       block_write (fs_device, sect->sector_idx, sect->buffer);
       
-      // maybe reclaim lock here
       sect->dirty_bit &= ~DIRTY;
       sect->state = og_state;
       cond_broadcast (&sect->being_written, &sect->lock);
@@ -204,10 +200,8 @@ read_from_disk (block_sector_t sector_idx, struct cache_sector *sect,
   sect->dirty_bit = CLEAN;
   sect->is_metadata = is_metadata;
 
-  // TODO(kenny) maybe release lock here 
   ASSERT (sect->sector_idx != INODE_INVALID_SECTOR);
   block_read (fs_device, sector_idx, sect->buffer);
-  // TODO(kenny) maybe reclaim lock here 
   
   sect->state = CACHE_READY;
   cond_broadcast (&sect->being_read, &sect->lock);
@@ -384,7 +378,7 @@ cache_io_at_ (block_sector_t sector_idx, void *buffer, bool is_metadata,
               block_sector_t sector_next)
 {
   cache_io_at (sector_idx, buffer, is_metadata, offset, size, is_write);
-  // read_ahead (sector_next);
+  //read_ahead (sector_next);
 }
 /* Writes all dirty cache sectors to disk */
 void

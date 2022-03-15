@@ -16,7 +16,6 @@ enum cache_state
     CACHE_EVICTED
   };
 
-/*TODO(kenny): reevaluate*/
 enum cache_info_bit
   {
     CLEAN = 0x0,
