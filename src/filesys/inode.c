@@ -81,7 +81,6 @@ byte_to_sector (const struct inode *inode, off_t pos, off_t length)
       off_t abs_idx =  pos / BLOCK_SECTOR_SIZE;
       return get_index (&inode->data, abs_idx);
     }
-    //return inode->data.start + pos / BLOCK_SECTOR_SIZE;
   else
     return INODE_INVALID_SECTOR;
 }
@@ -599,16 +598,17 @@ inode_clear_helper (block_sector_t idx, size_t num_sectors, int level)
 static bool
 inode_clear (struct inode* inode)
 {
-  if (inode->data.length < 0) return false;
+  struct inode_disk *disk_inode = &inode->data;
+  if (disk_inode->length < 0) return false;
 
-  int num_sectors_left = bytes_to_sectors (inode->data.length);
+  int num_sectors_left = bytes_to_sectors (disk_inode->length);
 
   // Clear direct blocks
   int num_direct = (num_sectors_left < INODE_NUM_DIRECT) ?
                     num_sectors_left : INODE_NUM_DIRECT;
   for (int i = 0; i < num_direct; ++i)
     {
-      free_map_release (inode->data.direct_blocks[i], 1);
+      free_map_release (disk_inode->direct_blocks[i], 1);
     }
   num_sectors_left -= num_direct;
 
@@ -617,7 +617,7 @@ inode_clear (struct inode* inode)
     num_sectors_left : INODE_NUM_IN_IND_BLOCK;
   if (num_indirect > 0)
   {
-    inode_clear_helper (inode->data.indirect_block, num_indirect, 1);
+    inode_clear_helper (disk_inode->indirect_block, num_indirect, 1);
     num_sectors_left -= num_indirect;
   }
 
@@ -626,7 +626,7 @@ inode_clear (struct inode* inode)
   num_indirect = (num_sectors_left <  oRet) ?  num_sectors_left : oRet;
   if (num_indirect > 0)
     {
-      inode_clear_helper (inode->data.dubindirect_block, num_indirect, 1);
+      inode_clear_helper (disk_inode->dubindirect_block, num_indirect, 1);
       num_sectors_left -= num_indirect;
     }
 
