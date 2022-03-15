@@ -56,6 +56,7 @@ bytes_to_sectors (off_t size)
 struct inode 
   {
     struct lock lock;                   /* Guards the inode. */
+    struct lock eof_lock;               /* Lock to make read past EOF atomic*/
     struct condition data_loaded_cond;  /* Wait to load data on open. */
     bool data_loaded;                   /* If the inode is usable. */
     struct lock dir_lock;               /* Lock for directory synch. */
@@ -172,6 +173,7 @@ inode_open (block_sector_t sector)
 
   /* Initialize. */
   lock_init (&inode->lock);
+  lock_init (&inode->eof_lock);
   cond_init (&inode->data_loaded_cond);
   lock_init (&inode->dir_lock);
   lock_acquire (&inode->lock);
@@ -349,31 +351,55 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 {
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
-  off_t expanded_length;
+  off_t length_after_write;
+  bool expand_write = false;
 
   if (inode->deny_write_cnt)
     return 0;
 
-  /* Expand if write will go past end of file. */
+  //TODO(kenny): move data out of inode struct
   struct inode_disk *disk_inode = &inode->data;
-  expanded_length = inode_length (inode);
-  if ((byte_to_sector (inode, offset + size - 1, expanded_length) 
-       == INODE_INVALID_SECTOR)
-      //TODO(kenny): move data out of inode struct
-      && !inode_expand (disk_inode, offset + size))
-    return 0;  /* Failed to expand the inode. */
-  else if (offset + size > expanded_length)
-    expanded_length = offset + size;  /* Use the new size while writing. */
+  length_after_write = inode_length (inode);
+
+  /* Expand if write will go past end of file. */
+  // Writes past EOF are atomic, claim lock if it is a write past EOF
+  expand_write = (offset + size) > length_after_write;
+  if (expand_write)
+    lock_acquire (&inode->eof_lock);
+
+  /*  We reach here when we aren't writing past file or if we are, we
+   *  are currently the only thread writing past EOF 
+   *  (we claimed the lock successfully)
+   *  So check to see noone else expanded while we were waiting
+   */
+  if (byte_to_sector (inode, offset + size - 1, length_after_write) ==
+      INODE_INVALID_SECTOR)
+    {
+      if (!inode_expand (disk_inode, offset + size))
+        {
+          lock_release (&inode->eof_lock);
+          return 0;  /* Failed to expand the inode. */
+        }
+    }
+  else if (expand_write)
+    {
+      //While we where waiting for lock someone else expanded the file
+      expand_write = false;
+      lock_release (&inode->eof_lock);
+    }
+  /* Use the new size while writing.*/
+  if (expand_write)
+    length_after_write = offset + size;  
   
   while (size > 0) 
     {
       /* Sector to write, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset,
-                                                  expanded_length);
+                                                  length_after_write);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
-      off_t inode_left = expanded_length - offset;
+      off_t inode_left = length_after_write - offset;
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
@@ -383,7 +409,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
         break;
 
       block_sector_t sector_next = byte_to_sector (inode, offset + chunk_size,
-                                                   expanded_length);
+                                                   length_after_write);
       if (sector_next == sector_idx) sector_next = INODE_INVALID_SECTOR;
       cache_io_at_ (sector_idx, (void*) buffer + bytes_written, false,
                     sector_ofs, chunk_size, true, sector_next);
@@ -398,14 +424,16 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   /* Only update the size if it increases. Another process could have
      increased the size further already so don't overwrite it. */
   //TODO(kenny): move data out of inode struct
-  if (expanded_length > inode->length)
+  if (length_after_write > inode->length)
     {
-      inode->length = expanded_length;
-      disk_inode->length = expanded_length;
+      inode->length = length_after_write;
+      disk_inode->length = length_after_write;
     }
   lock_release (&inode->lock);
   /* Flush the changes to cache. */
   cache_io_at (inode->sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
+  if (expand_write)
+    lock_release (&inode->eof_lock);
   return bytes_written;
 }
 
