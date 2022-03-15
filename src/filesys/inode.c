@@ -470,18 +470,18 @@ get_index (const struct inode_disk *disk_inode, off_t abs_idx)
   return idx;
 }
 
-static void
+static bool
 inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
 {
   if (level == 0) {
-    free_map_allocate (1, idx);
+    if (!free_map_allocate (1, idx)) return false;
     cache_io_at (*idx, ZEROARRAY, false, 0, BLOCK_SECTOR_SIZE, true);
-    return;
+    return true;
   }
 
   struct inode_indirect_sector indirect_block;
   if(*idx == INODE_INVALID_SECTOR) {
-    free_map_allocate (1, idx);
+    if (!free_map_allocate (1, idx)) return false;
     cache_io_at (*idx, ZEROARRAY, true, 0, BLOCK_SECTOR_SIZE, true);
   } 
   cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, false);
@@ -497,6 +497,7 @@ inode_expand_helper (block_sector_t *idx, size_t num_sectors_left, int level)
 
   ASSERT (num_sectors_left == 0);
   cache_io_at (*idx, &indirect_block, true, 0, BLOCK_SECTOR_SIZE, true);
+  return true;
 }
 
 /* Expand inode so it has enough sectors to hold a file of size NEW_SIZE.
@@ -526,14 +527,16 @@ inode_expand (struct inode_disk* disk_inode, off_t new_size)
   // Fill in indirect blocks
   int num_indirect = (num_sectors_left <  INODE_NUM_IN_IND_BLOCK) ?
     num_sectors_left : INODE_NUM_IN_IND_BLOCK;
-  inode_expand_helper (&disk_inode->indirect_block, num_indirect, 1);
+  bool bRet = inode_expand_helper (&disk_inode->indirect_block, num_indirect, 1);
+  if (!bRet) return false;
   num_sectors_left -= num_indirect;
   if(num_sectors_left == 0) return true;
 
   // Fill in doubly indirect blocks
   off_t oRet = INODE_NUM_IN_IND_BLOCK * INODE_NUM_IN_IND_BLOCK;
   num_indirect = (num_sectors_left <  oRet) ?  num_sectors_left : oRet;
-  inode_expand_helper (&disk_inode->dubindirect_block, num_indirect, 2);
+  bRet = inode_expand_helper (&disk_inode->dubindirect_block, num_indirect, 2);
+  if (!bRet) return false;
   num_sectors_left -= num_indirect;
   if(num_sectors_left == 0) return true;
   return false;
