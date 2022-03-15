@@ -74,7 +74,7 @@ bool
 filesys_mkdir (const char *path) 
 {
   struct dir *parent_dir = NULL, *dir = NULL;
-  struct inode *inode = NULL;
+  struct inode *inode = NULL, *lookup_dummy;
   const char *dir_name;
   block_sector_t inode_sector = 0;
 
@@ -82,9 +82,11 @@ filesys_mkdir (const char *path)
 
   parent_dir = dir_open_dirs (path);
   dir_name = dir_parse_filename (path);
+  if (dir_name[0] == '\0')
+    goto fail;  /* Name is empty. */
   if (parent_dir == NULL
       || !free_map_allocate (1, &inode_sector)
-      || !dir_create (inode_sector, 16))
+      || !dir_create (inode_sector))
     goto fail;
   /* dir inode created successfully. Now link the dirs. */
   inode = inode_open (inode_sector);
@@ -101,11 +103,11 @@ filesys_mkdir (const char *path)
   return true;
 
 fail:
-  if (dir != NULL)
-    dir_close (dir);
   if (inode != NULL)
     inode_remove (inode);
-  else if (inode_sector != 0)
+  if (dir != NULL)
+    dir_close (dir);
+  if (inode == NULL && inode_sector != 0)
     free_map_release (inode_sector, 1);
   if (parent_dir != NULL)
     dir_close (parent_dir);
@@ -191,7 +193,7 @@ do_format (void)
 
   printf ("Formatting file system...");
   free_map_create ();
-  if (!dir_create (ROOT_DIR_SECTOR, 16))
+  if (!dir_create (ROOT_DIR_SECTOR))
     PANIC ("root directory creation failed");
   /* Open the created root directory. */
   root_inode = inode_open (ROOT_DIR_SECTOR);

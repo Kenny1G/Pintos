@@ -557,8 +557,7 @@ thread_recalculate_priority (struct thread* t, size_t nested_depth)
         t->blocking_lock->max_priority_donation =
           list_entry (max_lock_donation_elem, struct thread,
                                                   lock_elem)->priority;
-        if (t->blocking_lock->holder)
-          thread_recalculate_priority (t->blocking_lock->holder, nested_depth + 1);
+        thread_recalculate_priority (t->blocking_lock->holder, nested_depth + 1);
       }
   }
   intr_set_level (old_level);

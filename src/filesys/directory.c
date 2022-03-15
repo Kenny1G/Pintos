@@ -5,12 +5,14 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include "threads/malloc.h"
 
 /* A directory. */
 struct dir 
   {
     struct inode *inode;                /* Backing store. */
+    struct lock *lock;                  /* Shared across dirs of inode. */
     off_t pos;                          /* Current position. */
   };
 
@@ -22,12 +24,12 @@ struct dir_entry
     bool in_use;                        /* In use or free? */
   };
 
-/* Creates a directory with space for ENTRY_CNT entries in the
+/* Creates a directory with space for no entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool
-dir_create (block_sector_t sector, size_t entry_cnt)
+dir_create (block_sector_t sector)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
+  return inode_create (sector, 0, true);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -36,9 +38,10 @@ struct dir *
 dir_open (struct inode *inode) 
 {
   struct dir *dir = calloc (1, sizeof *dir);
-  if (inode != NULL && dir != NULL)
+  if (inode != NULL && inode_isdir (inode) && dir != NULL)
     {
       dir->inode = inode;
+      dir->lock = inode_dir_lock (dir->inode);
       dir->pos = 2 * sizeof (struct dir_entry); /* Skip . and .. */
       return dir;
     }
@@ -105,15 +108,21 @@ dir_open_dirs (const char *filepath)
       /* Copy the NULL-terminated current name. */ 
       strlcpy (curr_name, filepath, curr_name_len + 1);
       /* Lookup the current_name in the parent and fail if not found. */
+      lock_acquire (parent_dir->lock);
       if (!dir_lookup (parent_dir, curr_name, &curr_inode))
         goto fail;
       /* Update the state to reflect the current step of path traversal. */
+      lock_release (parent_dir->lock);
       dir_close (parent_dir);
       parent_dir = dir_open (curr_inode);
+      if (parent_dir == NULL)
+        goto fail;
       filepath = next_slash + 1;
     }
   return parent_dir;
 fail:
+  if (parent_dir != NULL && lock_held_by_current_thread (parent_dir->lock))
+    lock_release (parent_dir->lock);
   dir_close (parent_dir);
   return NULL;
 }
@@ -230,6 +239,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     return false;
 
   /* Check that NAME is not in use. */
+  lock_acquire (dir->lock);
   if (lookup (dir, name, NULL, NULL))
     goto done;
 
@@ -252,6 +262,8 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
  done:
+  if (lock_held_by_current_thread (dir->lock))
+    lock_release (dir->lock);
   return success;
 }
 
@@ -271,6 +283,7 @@ dir_remove (struct dir *dir, const char *name)
   ASSERT (name != NULL);
 
   /* Find directory entry. */
+  lock_acquire (dir->lock);
   if (!lookup (dir, name, &e, &ofs))
     goto done;
 
@@ -302,6 +315,8 @@ dir_remove (struct dir *dir, const char *name)
   success = true;
 
  done:
+  if (lock_held_by_current_thread (dir->lock))
+    lock_release (dir->lock);
   if (dir_removed != NULL)
     dir_close (dir_removed);
   else if (inode != NULL)
@@ -317,15 +332,18 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
 
+  lock_acquire (dir->lock);
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
     {
       dir->pos += sizeof e;
       if (e.in_use)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
+          lock_release (dir->lock);
           return true;
         } 
     }
+  lock_release (dir->lock);
   return false;
 }
 
@@ -339,12 +357,15 @@ dir_empty (struct dir *dir)
   
   ASSERT (dir != NULL);
 
+  lock_acquire (dir->lock);
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
     /* Check if the entry is in_use and neither . nor .. */
     if (e.in_use && strcmp (".", e.name) && strcmp ("..", e.name))
       {
+        lock_release (dir->lock);
         return false;
       }
+  lock_release (dir->lock);
   return true;
 }

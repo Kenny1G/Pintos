@@ -276,7 +276,8 @@ process_exit (void)
   struct process_child *curr_child;
   uint32_t *pd;
 
-  lock_acquire (&process_child_lock);
+  if (!lock_held_by_current_thread (&process_child_lock))
+    lock_acquire (&process_child_lock);
   /* Update the parent (if exists) that this child has exited. */
   if (cur->inparent != NULL)
     {
