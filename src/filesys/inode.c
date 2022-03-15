@@ -38,7 +38,7 @@ struct inode_indirect_sector
   block_sector_t data[INODE_NUM_IN_IND_BLOCK];
 };
 
-static block_sector_t get_index (const struct inode *inode,
+static block_sector_t get_index (const struct inode_disk *disk_inode,
                                  off_t abs_idx);
 static struct inode_disk *get_data_at (block_sector_t sector_idx);
 static bool inode_expand (struct inode_disk* disk_inode, off_t new_size);
@@ -77,13 +77,13 @@ struct inode
    LENGTH is the size of INODE's data. This could be different from
    the length stored on disk while expanding the inode. */
 static block_sector_t
-byte_to_sector (const struct inode *inode, off_t pos, off_t length) 
+byte_to_sector (const struct inode_disk *disk_inode, off_t pos, off_t length) 
 {
-  ASSERT (inode != NULL);
+  ASSERT (disk_inode != NULL);
   if (pos >= 0 && pos < length)
     {
       off_t abs_idx =  pos / BLOCK_SECTOR_SIZE;
-      return get_index (inode, abs_idx);
+      return get_index (disk_inode, abs_idx);
     }
   else
     return INODE_INVALID_SECTOR;
@@ -308,10 +308,11 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   off_t bytes_read = 0;
   off_t inode_len = inode_length (inode);
 
+  struct inode_disk *disk_inode = &inode->data;
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset, inode_len);
+      block_sector_t sector_idx = byte_to_sector (disk_inode, offset, inode_len);
       if (sector_idx == INODE_INVALID_SECTOR) break;
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
@@ -325,7 +326,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (chunk_size <= 0)
         break;
 
-      block_sector_t sector_next = byte_to_sector (inode, offset + chunk_size, 
+      block_sector_t sector_next = byte_to_sector (disk_inode, offset + chunk_size, 
                                                    inode_len);
       if (sector_next == sector_idx) sector_next = INODE_INVALID_SECTOR;
       cache_io_at_ (sector_idx, buffer + bytes_read, false, sector_ofs,
@@ -372,7 +373,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
    *  (we claimed the lock successfully)
    *  So check to see noone else expanded while we were waiting
    */
-  if (byte_to_sector (inode, offset + size - 1, length_after_write) ==
+  if (byte_to_sector (disk_inode, offset + size - 1, length_after_write) ==
       INODE_INVALID_SECTOR)
     {
       if (!inode_expand (disk_inode, offset + size))
@@ -394,7 +395,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   while (size > 0) 
     {
       /* Sector to write, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset,
+      block_sector_t sector_idx = byte_to_sector (disk_inode, offset,
                                                   length_after_write);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
@@ -408,7 +409,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (chunk_size <= 0)
         break;
 
-      block_sector_t sector_next = byte_to_sector (inode, offset + chunk_size,
+      block_sector_t sector_next = byte_to_sector (disk_inode, offset + chunk_size,
                                                    length_after_write);
       if (sector_next == sector_idx) sector_next = INODE_INVALID_SECTOR;
       cache_io_at_ (sector_idx, (void*) buffer + bytes_written, false,
@@ -420,20 +421,17 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
   /* Update inode to reflect new size only after writing everything. */
-  lock_acquire (&inode->lock);
   /* Only update the size if it increases. Another process could have
      increased the size further already so don't overwrite it. */
-  //TODO(kenny): move data out of inode struct
-  if (length_after_write > inode->length)
+  if (expand_write)
     {
       inode->length = length_after_write;
       disk_inode->length = length_after_write;
+      l_disk_inode->length = length_after_write; //TODO remove
+      lock_release (&inode->eof_lock);
+      /* Flush the changes to cache. */
+      cache_io_at (inode->sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
     }
-  lock_release (&inode->lock);
-  /* Flush the changes to cache. */
-  cache_io_at (inode->sector, disk_inode, true, 0, BLOCK_SECTOR_SIZE, true);
-  if (expand_write)
-    lock_release (&inode->eof_lock);
   return bytes_written;
 }
 
@@ -474,12 +472,10 @@ inode_length (struct inode *inode)
 }
 
 static block_sector_t
-get_index (const struct inode *inode, off_t abs_idx)
+get_index (const struct inode_disk *disk_inode, off_t abs_idx)
 {
   struct inode_indirect_sector *sect;
   block_sector_t idx = INODE_INVALID_SECTOR;
-  const struct inode_disk* disk_inode = &inode->data;
-
   if (abs_idx < INODE_NUM_DIRECT)
     {
         idx = disk_inode->direct_blocks[abs_idx];
