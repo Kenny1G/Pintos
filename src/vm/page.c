@@ -5,7 +5,7 @@
 #include "threads/malloc.h"
 #include "threads/synch.h"
 #include "userprog/pagedir.h"
-#include "filesys/file.h"
+#include "filesys/filesys.h"
 
 extern struct lock syscall_file_lock;
 static bool page_in (struct page *page);
@@ -298,7 +298,6 @@ fail:
   frame_free (frame);
   page->pinned = false;
   return false;
-
 }
 
 /* Reads data into mmapped PAGE from file backing it */
@@ -308,24 +307,20 @@ page_file_in (struct page *page)
   struct page_mmap *mmap = page->mmap;
   if (mmap == NULL)
     return false;
-
-  /*get file lock here*/
-  // Read data from mmap file
-  off_t old_cur = file_tell (mmap->file);
-  lock_acquire (&syscall_file_lock);
-  file_seek (mmap->file, page->start_byte);
+  /* Read data from mmap file. */
+  off_t old_cur = filesys_tell (mmap->file);
+  filesys_seek (mmap->file, page->start_byte);
   off_t bytes_to_read = PGSIZE - page->file_zero_bytes;
   off_t bytes_read = 0;
   if (bytes_to_read)
-    bytes_read = file_read (mmap->file, page->frame->kaddr, bytes_to_read);
-  file_seek (mmap->file, old_cur);
-  lock_release (&syscall_file_lock);
+    bytes_read = filesys_read (mmap->file, page->frame->kaddr, bytes_to_read);
+  filesys_seek (mmap->file, old_cur);
 
   if (bytes_read != bytes_to_read)
     return false;
 
-  //Zero out zero bytes
-  memset(page->frame->kaddr + bytes_read, 0, page->file_zero_bytes);
+  /* Zero out zero bytes. */
+  memset (page->frame->kaddr + bytes_read, 0, page->file_zero_bytes);
   page->location = FRAME;
   return true;
 }
@@ -395,19 +390,17 @@ page_evict (struct page *page)
           if (page->writable && pagedir_is_dirty (page->thread->pagedir,
                 page->uaddr))
             {
-              //Write page to fle
-              lock_acquire (&syscall_file_lock);
+              /* Write page to file. */
               struct page_mmap *mmap = page->mmap;
-              file_seek(mmap->file, page->start_byte);
+              filesys_seek (mmap->file, page->start_byte);
               off_t bytes_to_write = PGSIZE - page->file_zero_bytes;
-              success = bytes_to_write == file_write(mmap->file,
-                  page->frame->kaddr, bytes_to_write);
-              lock_release (&syscall_file_lock);
+              success = bytes_to_write == filesys_write (mmap->file,
+                                  page->frame->kaddr, bytes_to_write);
             }
           else
             {
               /* Non-writable file backed pages should just be cleared and
-               * re-fetched from file */
+                 re-fetched from file */
               page->location = FILE;
               success = true;
             }
@@ -510,10 +503,7 @@ void page_delete_mmap (struct page_mmap *mmap)
       page_free(page->page_addr);
       free(page);
     }
-
-  lock_acquire (&syscall_file_lock);
-  file_close(mmap->file);
-  lock_release (&syscall_file_lock);
+  filesys_close (mmap->file);
   free (mmap);
 }
 

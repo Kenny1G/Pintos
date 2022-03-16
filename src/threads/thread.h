@@ -125,11 +125,17 @@ struct thread
     mapid_t mmap_next_id;               /* Next availabnle mmap id */
 
     /* File system */
-    struct file* exec_file;             /* The file that spawned this process*/
-
+    void* exec_file;             /* The file that spawned this process*/
+    void* cwd;                    /* Inherited current working directory.
+                                           Initialized by filesys_init. */
     struct list process_fd_table;       /* List of this process' file
-                                           descriptors*/
+                                           descriptors. */
     int process_fd_next;                /* ID to be assigned to next fd */
+    /* Owened by userprog/syscall.c */
+    bool fd_table_ready;                /* Won't free up the following
+                                           resources if not ready. */
+    struct hash fd_table;               /* Open file descriptors table. */
+    int fd_next;                        /* ID to be assigned to next fd */
 #endif
 
     int64_t wake_tick;                  /* Number of ticks left to sleep*/
